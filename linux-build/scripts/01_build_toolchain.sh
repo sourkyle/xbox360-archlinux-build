@@ -65,6 +65,10 @@ if [[ "$PREFIX" =~ [[:space:]] ]]; then
 fi
 
 SYSROOT="${PREFIX}/${TARGET}/sysroot"
+CROSS_CC="${TARGET}-gcc"
+CROSS_AR="${TARGET}-ar"
+CROSS_RANLIB="${TARGET}-ranlib"
+BUILD_GNU_TYPE="$(gcc -dumpmachine)"
 
 JOBS="$(nproc)"
 TOOLCHAIN_BUILD_ROOT="$BUILD_ROOT"
@@ -252,8 +256,15 @@ else
 fi
 
 # ─── Step 4: Glibc ────────────────────────────────────────────────
+glibc_is_installed() {
+    [ -f "$SYSROOT/lib/libc.so.6" ] || \
+    [ -f "$SYSROOT/lib64/libc.so.6" ] || \
+    [ -f "$SYSROOT/usr/lib/libc.so.6" ] || \
+    [ -f "$SYSROOT/usr/lib64/libc.so.6" ]
+}
+
 GLIBC_BUILD="$BUILD_DIR/glibc"
-if [ ! -f "$SYSROOT/lib/libc.so.6" ]; then
+if ! glibc_is_installed; then
     info "=== Building glibc ${GLIBC_VERSION} ==="
     if [ -d "$GLIBC_BUILD" ]; then
         info "Cleaning previous glibc build directory..."
@@ -262,15 +273,32 @@ if [ ! -f "$SYSROOT/lib/libc.so.6" ]; then
     mkdir -p "$GLIBC_BUILD"
     cd "$GLIBC_BUILD"
 
+    for tool in "$CROSS_CC" "$CROSS_AR" "$CROSS_RANLIB"; do
+        if ! command -v "$tool" &>/dev/null; then
+            error "Required cross tool not found before glibc build: $tool"
+        fi
+    done
+
     "$SRC_DIR/glibc-${GLIBC_VERSION}/configure" \
         --host="$TARGET" \
-        --build="$(gcc -dumpmachine)" \
+        --build="$BUILD_GNU_TYPE" \
         --prefix="/usr" \
         --with-headers="$SYSROOT/usr/include" \
         --disable-multilib \
         --disable-werror \
-        libc_cv_forced_unwind=yes
-    make -j"$JOBS"
+        BUILD_CC="gcc" \
+        CC="$CROSS_CC" \
+        CXX="no" \
+        AR="$CROSS_AR" \
+        RANLIB="$CROSS_RANLIB" \
+        libc_cv_forced_unwind=yes \
+        libc_cv_c_cleanup=yes
+    make -j"$JOBS" \
+        BUILD_CC="gcc" \
+        CC="$CROSS_CC" \
+        CXX= \
+        AR="$CROSS_AR" \
+        RANLIB="$CROSS_RANLIB"
     make install DESTDIR="$SYSROOT"
     info "Glibc installed"
 else

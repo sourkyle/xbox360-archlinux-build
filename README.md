@@ -319,6 +319,17 @@ Update to the latest scripts and re-run:
 
 The toolchain script now builds through a temporary symlink like `/tmp/xenon-linux-build-1000` when the checkout directory has spaces in its path. If you pass `--prefix`, make sure that install path does not contain spaces.
 
+### Toolchain build: glibc `Relocations in generic ELF (EM: 62)`
+
+This means an x86_64 host object was linked by the PowerPC64 target linker. Update to the latest scripts, remove the partial glibc build directory, and re-run Step 1:
+
+```bash
+rm -rf toolchain/build/glibc
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now forces glibc to use the stage-1 cross C compiler and disables C++ detection during the glibc bootstrap, which prevents host `g++` objects such as `support/links-dso-program.o` from entering the target link.
+
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
 
 Make sure the binfmt handlers are active:
