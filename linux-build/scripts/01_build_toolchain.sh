@@ -22,18 +22,70 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_ROOT="$(dirname "$SCRIPT_DIR")"
 
+info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
+warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
+error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
+
 BINUTILS_VERSION="2.42"
 GCC_VERSION="12.4.0"
 GLIBC_VERSION="2.39"
 LINUX_VERSION="6.5"
 
 TARGET="powerpc64-linux-gnu"
-PREFIX="${1:-/usr/local/xenon-linux}"
+PREFIX="/usr/local/xenon-linux"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --prefix)
+            [ $# -ge 2 ] || error "--prefix requires a path"
+            PREFIX="$2"
+            shift 2
+            ;;
+        --prefix=*)
+            PREFIX="${1#--prefix=}"
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--prefix /path/to/install]"
+            exit 0
+            ;;
+        -*)
+            error "Unknown option: $1"
+            ;;
+        *)
+            # Backwards-compatible shorthand: ./01_build_toolchain.sh /path/to/install
+            PREFIX="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ "$PREFIX" =~ [[:space:]] ]]; then
+    error "Install prefix cannot contain spaces: $PREFIX"
+fi
+
 SYSROOT="${PREFIX}/${TARGET}/sysroot"
 
 JOBS="$(nproc)"
-SRC_DIR="${BUILD_ROOT}/toolchain/src"
-BUILD_DIR="${BUILD_ROOT}/toolchain/build"
+TOOLCHAIN_BUILD_ROOT="$BUILD_ROOT"
+SAFE_LINK=""
+if [[ "$BUILD_ROOT" =~ [[:space:]] ]]; then
+    SAFE_LINK="${TMPDIR:-/tmp}/xenon-linux-build-$(id -u)"
+    if [ -L "$SAFE_LINK" ]; then
+        if [ "$(readlink "$SAFE_LINK")" != "$BUILD_ROOT" ]; then
+            rm -f "$SAFE_LINK"
+            ln -s "$BUILD_ROOT" "$SAFE_LINK"
+        fi
+    elif [ -e "$SAFE_LINK" ]; then
+        error "Cannot create no-space build path at $SAFE_LINK because it already exists"
+    else
+        ln -s "$BUILD_ROOT" "$SAFE_LINK"
+    fi
+    TOOLCHAIN_BUILD_ROOT="$SAFE_LINK"
+    warn "Build path contains spaces; using no-space alias: $TOOLCHAIN_BUILD_ROOT"
+fi
+SRC_DIR="${TOOLCHAIN_BUILD_ROOT}/toolchain/src"
+BUILD_DIR="${TOOLCHAIN_BUILD_ROOT}/toolchain/build"
 
 BINUTILS_URL="https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VERSION}.tar.xz"
 GCC_URL="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
@@ -41,10 +93,6 @@ GLIBC_URL="https://ftp.gnu.org/gnu/glibc/glibc-${GLIBC_VERSION}.tar.xz"
 LINUX_URL="https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${LINUX_VERSION}.tar.xz"
 
 export PATH="${PREFIX}/bin:${PATH}"
-
-info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
-warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
-error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
 download() {
     local url="$1" dest="$2"

@@ -49,6 +49,8 @@ Builds `powerpc64-linux-gnu` GCC 12.4 with the Xenon VMX128 patch applied. This 
 ./scripts/01_build_toolchain.sh
 ```
 
+If your checkout path contains spaces, such as `~/Downloads/xbox 360 modding/linux-build`, the script creates a temporary no-space symlink under `/tmp` and builds through that path. GNU binutils/GCC configure scripts reject source/build paths with spaces, so keep any custom `--prefix` path free of spaces too.
+
 Installs to `/usr/local/xenon-linux` by default. To use a different path:
 
 ```bash
@@ -306,6 +308,16 @@ sudo pacman -S rsync
 ```
 
 Then re-run `./scripts/01_build_toolchain.sh`.
+
+### Toolchain build: `configure: error: path to source ... contains spaces`
+
+Update to the latest scripts and re-run:
+
+```bash
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now builds through a temporary symlink like `/tmp/xenon-linux-build-1000` when the checkout directory has spaces in its path. If you pass `--prefix`, make sure that install path does not contain spaces.
 
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
 
