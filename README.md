@@ -330,6 +330,17 @@ rm -rf toolchain/build/glibc
 
 The toolchain script now forces glibc to use the stage-1 cross C compiler and disables C++ detection during the glibc bootstrap, which prevents host `g++` objects such as `support/links-dso-program.o` from entering the target link.
 
+### Toolchain build: stage 2 GCC `cannot find crti.o`
+
+This means stage 2 GCC cannot find glibc's startup files in the sysroot library search paths. Update to the latest scripts, remove the partial stage 2 build directory, and re-run Step 1:
+
+```bash
+rm -rf toolchain/build/gcc-stage2
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now normalizes the post-glibc sysroot library layout before stage 2 starts, including the common PowerPC64 `lib64` startup-file location.
+
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
 
 Make sure the binfmt handlers are active:

@@ -263,6 +263,41 @@ glibc_is_installed() {
     [ -f "$SYSROOT/usr/lib64/libc.so.6" ]
 }
 
+ensure_glibc_startfiles() {
+    local crt_file src dest
+
+    # PowerPC64 glibc commonly installs ABI64 objects under lib64.  GCC's
+    # build-time sysroot search still walks through usr/lib, so keep that
+    # directory present and expose startup files there when glibc used lib64.
+    mkdir -p "$SYSROOT/lib" "$SYSROOT/usr/lib"
+
+    for crt_file in crt1.o crti.o crtn.o; do
+        if [ -f "$SYSROOT/usr/lib/$crt_file" ] || [ -f "$SYSROOT/lib/$crt_file" ]; then
+            continue
+        fi
+
+        src=""
+        for candidate in \
+            "$SYSROOT/usr/lib64/$crt_file" \
+            "$SYSROOT/lib64/$crt_file" \
+            "$SYSROOT/usr/lib/powerpc64-linux-gnu/$crt_file" \
+            "$SYSROOT/lib/powerpc64-linux-gnu/$crt_file"; do
+            if [ -f "$candidate" ]; then
+                src="$candidate"
+                break
+            fi
+        done
+
+        if [ -z "$src" ]; then
+            error "glibc startup file not found in sysroot after install: $crt_file"
+        fi
+
+        dest="$SYSROOT/usr/lib/$crt_file"
+        cp -a "$src" "$dest"
+        info "Copied $crt_file into sysroot usr/lib"
+    done
+}
+
 GLIBC_BUILD="$BUILD_DIR/glibc"
 if ! glibc_is_installed; then
     info "=== Building glibc ${GLIBC_VERSION} ==="
@@ -300,9 +335,11 @@ if ! glibc_is_installed; then
         AR="$CROSS_AR" \
         RANLIB="$CROSS_RANLIB"
     make install DESTDIR="$SYSROOT"
+    ensure_glibc_startfiles
     info "Glibc installed"
 else
     info "Glibc already installed, skipping"
+    ensure_glibc_startfiles
 fi
 
 # ─── Step 5: GCC (stage 2 — full C/C++ with libc) ────────────────
