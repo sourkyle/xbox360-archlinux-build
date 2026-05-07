@@ -1,5 +1,11 @@
 # Changelog
 
+## Alpha 1.08 - Rootfs package failure handling and default password
+
+- Commit: this rootfs bootstrap hardening update
+- Change: Removed the nonexistent `vi` package target from Step 3, made manual pacman bootstrap failures fatal, and changed the default root password to `arch` with a `--root-password` override.
+- Why: Pacman aborts the whole transaction when any requested package is missing. The old script warned but still packaged the incomplete rootfs, producing a tiny tarball with missing systemd, SSH, and password tools. Failing fast prevents unusable rootfs images, and the password default now matches the requested first-boot password.
+
 ## Alpha 1.07 - Correct ArchPOWER rootfs repositories
 
 - Commit: `7d47215`

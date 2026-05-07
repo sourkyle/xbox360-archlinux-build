@@ -95,9 +95,12 @@ Options:
 
 ```bash
 sudo ./scripts/03_build_archlinux_rootfs.sh --hostname myxbox --timezone America/New_York
+
+# Default root password is "arch"; override it if you want:
+sudo ./scripts/03_build_archlinux_rootfs.sh --root-password my-temporary-password
 ```
 
-> Takes ~10-15 minutes. Produces `output/archlinux-xenon-rootfs.tar.gz`. Default root password is `xenon360`.
+> Takes ~10-15 minutes. Produces `output/archlinux-xenon-rootfs.tar.gz`. Default root password is `arch`.
 
 ### Step 4 — Create the bootable USB image
 
@@ -409,6 +412,16 @@ Server = https://repo.archlinuxpower.org/base/any/
 ```
 
 Older script versions used `[core]`/`[extra]`, which made pacman look for nonexistent `core.db` and `extra.db` files. Update to the latest scripts and re-run `sudo ./scripts/03_build_archlinux_rootfs.sh`.
+
+### Rootfs: `target not found: vi`
+
+Older script versions requested a `vi` package that ArchPOWER does not provide under that package name. Update to the latest scripts and re-run Step 3:
+
+```bash
+sudo ./scripts/03_build_archlinux_rootfs.sh
+```
+
+The script now installs `nano` and fails the rootfs build immediately if any required package transaction fails, instead of producing an incomplete tarball.
 
 ### Boot: root partition not found
 

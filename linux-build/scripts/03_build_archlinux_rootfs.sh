@@ -14,7 +14,7 @@
 #   6. Applies Xbox 360 hardware tweaks (ZRAM, framebuffer getty)
 #   7. Packages the rootfs as a tarball
 #
-# Usage: ./03_build_archlinux_rootfs.sh [--output /path/to/rootfs.tar.gz]
+# Usage: ./03_build_archlinux_rootfs.sh [--output /path/to/rootfs.tar.gz] [--root-password arch]
 #
 # Prerequisites (Arch Linux host):
 #   pacman -Syu qemu-user-static arch-install-scripts dosfstools e2fsprogs parted
@@ -35,11 +35,21 @@ OUTPUT_TARBALL="${OUTPUT_DIR}/archlinux-xenon-rootfs.tar.gz"
 HOSTNAME="xenon360"
 TIMEZONE="UTC"
 LOCALE="en_US.UTF-8"
+ROOT_PASSWORD="arch"
 
 # ArchPOWER repository configuration
 ARCHPOWER_MIRROR="https://repo.archlinuxpower.org"
 ARCHPOWER_ISO_MIRROR="https://archlinuxpower.org/iso"
 ARCH="powerpc64"
+ROOTFS_PACKAGES=(
+    filesystem bash coreutils glibc pacman
+    systemd systemd-sysvcompat
+    iproute2 iputils dhcpcd openssh
+    nano less grep sed gawk
+    procps-ng psmisc which file findutils
+    tar gzip xz bzip2
+    shadow util-linux e2fsprogs kmod
+)
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -47,6 +57,7 @@ while [[ $# -gt 0 ]]; do
         --output) OUTPUT_TARBALL="$2"; shift 2 ;;
         --hostname) HOSTNAME="$2"; shift 2 ;;
         --timezone) TIMEZONE="$2"; shift 2 ;;
+        --root-password) ROOT_PASSWORD="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -182,7 +193,7 @@ BOOTSTRAP_OK=0
 
 if command -v pacstrap &>/dev/null; then
     info "Using pacstrap for bootstrap (from arch-install-scripts)..."
-    if pacstrap -C "$HOST_PACMAN_CONF" -K -M "$ROOTFS_DIR" base 2>&1; then
+    if pacstrap -C "$HOST_PACMAN_CONF" -K -M "$ROOTFS_DIR" "${ROOTFS_PACKAGES[@]}" 2>&1; then
         BOOTSTRAP_OK=1
         info "pacstrap completed successfully"
     else
@@ -202,14 +213,11 @@ if [ "$BOOTSTRAP_OK" -eq 0 ] && command -v pacman &>/dev/null; then
     info "Installing base packages into rootfs..."
     pacman --config "$HOST_PACMAN_CONF" --root "$ROOTFS_DIR" \
         --noconfirm --needed -S \
-        filesystem bash coreutils glibc pacman \
-        systemd systemd-sysvcompat \
-        iproute2 iputils dhcpcd openssh \
-        nano vi less grep sed gawk \
-        procps-ng psmisc which file findutils \
-        tar gzip xz bzip2 \
-        shadow util-linux e2fsprogs kmod \
-        || warn "Some packages may have failed to install"
+        "${ROOTFS_PACKAGES[@]}" || {
+            rm -f "$HOST_PACMAN_CONF"
+            error "Manual pacman bootstrap failed. No rootfs tarball was created.
+Check the package error above, then re-run this script."
+        }
     BOOTSTRAP_OK=1
 fi
 
@@ -333,8 +341,8 @@ for svc in systemd-networkd systemd-resolved systemd-timesyncd sshd; do
         warn "Could not enable ${svc} (may not be installed yet)"
 done
 
-# Set root password (default: xenon360)
-echo "root:xenon360" | chroot "$ROOTFS_DIR" chpasswd 2>/dev/null || {
+# Set root password (default: arch)
+echo "root:${ROOT_PASSWORD}" | chroot "$ROOTFS_DIR" chpasswd 2>/dev/null || {
     warn "Could not set root password via chpasswd."
     warn "Set it manually after first boot with: passwd"
 }
@@ -402,6 +410,6 @@ info "  Tarball: ${OUTPUT_TARBALL}"
 info "  Size: $(du -h "$OUTPUT_TARBALL" | cut -f1)"
 info "=========================================="
 info ""
-info "  Default root password: xenon360"
+info "  Default root password: ${ROOT_PASSWORD}"
 info "  CHANGE THIS after first boot!"
 info ""
