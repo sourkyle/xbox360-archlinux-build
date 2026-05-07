@@ -240,6 +240,7 @@ if [ ! -f "$PREFIX/bin/${TARGET}-gcc" ]; then
         --disable-shared \
         --disable-multilib \
         --disable-threads \
+        --disable-libsanitizer \
         --disable-libssp \
         --disable-libgomp \
         --disable-libquadmath \
@@ -358,6 +359,7 @@ if [ ! -f "$PREFIX/bin/${TARGET}-g++" ]; then
         --with-sysroot="$SYSROOT" \
         --disable-nls \
         --disable-multilib \
+        --disable-libsanitizer \
         --enable-shared \
         --enable-threads=posix \
         --enable-languages=c,c++ \

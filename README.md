@@ -341,6 +341,17 @@ rm -rf toolchain/build/gcc-stage2
 
 The toolchain script now normalizes the post-glibc sysroot library layout before stage 2 starts, including the common PowerPC64 `lib64` startup-file location.
 
+### Toolchain build: libsanitizer `fatal error: crypt.h: No such file or directory`
+
+This happens while GCC is building optional sanitizer runtimes. They are not needed for the Xbox 360 cross-toolchain, and GCC 12's libsanitizer expects `crypt.h`, which modern/minimal target sysroots often do not provide because crypt support lives in a separate libxcrypt package. Update to the latest scripts, remove the partial stage 2 build directory, and re-run Step 1:
+
+```bash
+rm -rf toolchain/build/gcc-stage2
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now configures GCC with `--disable-libsanitizer`.
+
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
 
 Make sure the binfmt handlers are active:
