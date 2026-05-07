@@ -4,6 +4,8 @@ Build scripts for compiling and deploying Arch Linux (ArchPOWER) on Xbox 360 con
 
 > **You need**: An RGH/JTAG-modded Xbox 360 running XeLL Reloaded, a USB HDD (16GB+), and an Arch Linux build machine.
 
+See [`CHANGELOG.md`](CHANGELOG.md) for alpha version history and the rationale behind each build fix.
+
 ---
 
 ## Host Dependencies (Arch Linux)
@@ -351,6 +353,14 @@ rm -rf toolchain/build/gcc-stage2
 ```
 
 The toolchain script now configures GCC with `--disable-libsanitizer`.
+
+### Kernel build: `/bin/sh: bc: command not found`
+
+```bash
+sudo pacman -S base-devel bc flex bison wget
+```
+
+Then re-run `./scripts/02_build_kernel.sh`. The kernel script checks these host tools before starting the compile so missing dependencies fail early.
 
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
 
