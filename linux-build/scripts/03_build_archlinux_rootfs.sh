@@ -115,6 +115,19 @@ for cmd in wget tar; do
     fi
 done
 
+# ArchPOWER publishes one repository database for architecture-specific
+# packages and one for architecture-independent packages.  Check both before
+# pacman/pacstrap produce misleading mirrorlist or 404 output.
+info "=== Checking ArchPOWER repository metadata ==="
+for repo_db in \
+    "${ARCHPOWER_MIRROR}/base/${ARCH}/base.db" \
+    "${ARCHPOWER_MIRROR}/base/any/base-any.db"; do
+    if ! wget -q --spider "$repo_db"; then
+        error "ArchPOWER repository database is not reachable: $repo_db
+Check your network connection or the ArchPOWER repository status."
+    fi
+done
+
 # ─── Create rootfs directory ──────────────────────────────────────
 if [ -d "$ROOTFS_DIR" ]; then
     info "Removing previous rootfs build..."
@@ -137,11 +150,11 @@ Architecture = powerpc64
 SigLevel    = Never
 LocalFileSigLevel = Optional
 
-[core]
+[base]
 Server = https://repo.archlinuxpower.org/base/powerpc64/
 
-[extra]
-Server = https://repo.archlinuxpower.org/base/powerpc64/
+[base-any]
+Server = https://repo.archlinuxpower.org/base/any/
 PACMAN_CONF
 
 # Host-side pacman config for cross-architecture bootstrap
@@ -156,11 +169,11 @@ DBPath      = ${ROOTFS_DIR}/var/lib/pacman/
 CacheDir    = ${ROOTFS_DIR}/var/cache/pacman/pkg/
 LogFile     = ${ROOTFS_DIR}/var/log/pacman.log
 
-[core]
+[base]
 Server = ${ARCHPOWER_MIRROR}/base/powerpc64/
 
-[extra]
-Server = ${ARCHPOWER_MIRROR}/base/powerpc64/
+[base-any]
+Server = ${ARCHPOWER_MIRROR}/base/any/
 HOSTCONF
 
 # On Arch hosts, pacstrap is available from arch-install-scripts.

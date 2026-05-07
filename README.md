@@ -380,6 +380,13 @@ If pacman reports package download `404` errors such as `qemu-user-static-...pkg
 sudo pacman -Syyu qemu-user-static
 ```
 
+If your `/etc/pacman.d/mirrorlist` contains only commented `#Server = ...` lines, enable at least one HTTPS mirror before running host package installs:
+
+```bash
+sudo sed -i '0,/^#Server = https:/s/^#Server = https:/Server = https:/' /etc/pacman.d/mirrorlist
+sudo pacman -Syyu
+```
+
 Make sure the binfmt handlers are active:
 
 ```bash
@@ -388,6 +395,20 @@ ls /proc/sys/fs/binfmt_misc/qemu-ppc64*   # should show an entry
 ```
 
 If no entry appears, your `qemu-user-static-binfmt` package may not be installed or configured correctly.
+
+### Rootfs: ArchPOWER repository database errors
+
+The rootfs script uses ArchPOWER's repository layout directly:
+
+```ini
+[base]
+Server = https://repo.archlinuxpower.org/base/powerpc64/
+
+[base-any]
+Server = https://repo.archlinuxpower.org/base/any/
+```
+
+Older script versions used `[core]`/`[extra]`, which made pacman look for nonexistent `core.db` and `extra.db` files. Update to the latest scripts and re-run `sudo ./scripts/03_build_archlinux_rootfs.sh`.
 
 ### Boot: root partition not found
 
