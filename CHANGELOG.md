@@ -1,8 +1,14 @@
 # Changelog
 
+## Alpha 1.06 - QEMU package sync guidance
+
+- Commit: this QEMU installation guidance update
+- Change: Updated rootfs prerequisite messages and documentation to install `qemu-user-static` with synchronized package databases (`pacman -Syu`) and to force-refresh stale databases (`pacman -Syyu`) when pacman reports package download `404` errors.
+- Why: A `qemu-user-static-...pkg.tar.zst failed to download` 404 usually means pacman is using stale sync metadata or stale mirrors, not that the rootfs script is broken. The new guidance points users to refresh pacman before retrying Step 3.
+
 ## Alpha 1.05 - Kernel host prerequisite check
 
-- Commit: this changelog update and kernel prerequisite fix
+- Commit: `52423ed`
 - Change: Added an early host-tool check to `02_build_kernel.sh` for `bc`, `bison`, `flex`, `make`, `patch`, `tar`, and `wget`.
 - Why: The kernel build requires `bc` while generating `include/generated/timeconst.h`; without it, Step 2 fails deep inside `make` with `/bin/sh: bc: command not found`. Failing fast gives the exact Arch package command before a long build starts.
 

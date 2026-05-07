@@ -12,7 +12,7 @@ See [`CHANGELOG.md`](CHANGELOG.md) for alpha version history and the rationale b
 
 ```bash
 # Official repos
-sudo pacman -S base-devel bc cpio wget git python texinfo \
+sudo pacman -Syu base-devel bc cpio wget git python texinfo \
                libmpc mpfr gmp rsync \
                qemu-user-static arch-install-scripts \
                dosfstools e2fsprogs parted squashfs-tools \
@@ -26,6 +26,8 @@ sudo systemctl restart systemd-binfmt
 ```
 
 > **Note:** `rsync` is required by the GCC build system. If you see `rsync: command not found` during the toolchain build, install it with `sudo pacman -S rsync`.
+
+> If pacman fails with package download `404` errors, your local sync database or mirror list is stale. Run `sudo pacman -Syyu` to force-refresh package databases, then retry the install. If it still fails, refresh `/etc/pacman.d/mirrorlist` to current HTTPS mirrors and run `sudo pacman -Syyu` again.
 
 > `qemu-user-static-binfmt` is the current AUR package name (replaces older `binfmt-qemu-static`). It registers QEMU as the interpreter for foreign ELF binaries via systemd-binfmt, which is what lets your x86_64 Arch machine execute ppc64 binaries inside a chroot.
 
@@ -363,6 +365,20 @@ sudo pacman -S base-devel bc flex bison wget
 Then re-run `./scripts/02_build_kernel.sh`. The kernel script checks these host tools before starting the compile so missing dependencies fail early.
 
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
+
+If `qemu-ppc64-static` is missing, install QEMU with a synchronized package database:
+
+```bash
+sudo pacman -Syu qemu-user-static
+yay -S qemu-user-static-binfmt
+sudo systemctl restart systemd-binfmt
+```
+
+If pacman reports package download `404` errors such as `qemu-user-static-...pkg.tar.zst failed to download`, force-refresh stale package databases and retry:
+
+```bash
+sudo pacman -Syyu qemu-user-static
+```
 
 Make sure the binfmt handlers are active:
 

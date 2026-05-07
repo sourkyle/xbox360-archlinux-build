@@ -17,7 +17,7 @@
 # Usage: ./03_build_archlinux_rootfs.sh [--output /path/to/rootfs.tar.gz]
 #
 # Prerequisites (Arch Linux host):
-#   pacman -S qemu-user-static arch-install-scripts dosfstools e2fsprogs parted
+#   pacman -Syu qemu-user-static arch-install-scripts dosfstools e2fsprogs parted
 #   yay -S qemu-user-static-binfmt
 #   sudo systemctl restart systemd-binfmt
 #
@@ -75,7 +75,9 @@ for candidate in \
 done
 if [ -z "$QEMU_BIN" ]; then
     error "qemu-ppc64-static not found. Install it first:
-  Arch:   pacman -S qemu-user-static && yay -S qemu-user-static-binfmt
+  Arch:   sudo pacman -Syu qemu-user-static && yay -S qemu-user-static-binfmt
+          If pacman returns 404s, refresh stale sync databases/mirrors:
+          sudo pacman -Syyu qemu-user-static
   Debian: apt install qemu-user-static binfmt-support"
 fi
 info "QEMU binary: $QEMU_BIN"
