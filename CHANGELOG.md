@@ -2,7 +2,7 @@
 
 ## Alpha 1.07 - Correct ArchPOWER rootfs repositories
 
-- Commit: this ArchPOWER repository layout fix
+- Commit: `7d47215`
 - Change: Updated Step 3 pacman configs to use ArchPOWER's actual `[base]` and `[base-any]` repositories and added an early metadata check for `base.db` and `base-any.db`.
 - Why: ArchPOWER stores architecture-specific packages under `/base/powerpc64/` as `base.db` and architecture-independent packages under `/base/any/` as `base-any.db`. The previous `[core]`/`[extra]` config made pacman request nonexistent `core.db` and `extra.db` files, causing confusing mirrorlist or 404 failures during rootfs bootstrap.
 
