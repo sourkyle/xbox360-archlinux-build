@@ -102,6 +102,8 @@ sudo ./scripts/03_build_archlinux_rootfs.sh --root-password my-temporary-passwor
 
 > Takes ~10-15 minutes. Produces `output/archlinux-xenon-rootfs.tar.gz`. Default root password is `arch`.
 
+> Some package post-install hooks may print warnings when bootstrapping a foreign-architecture rootfs from a chroot. The script mounts `/proc`, `/sys`, `/dev`, and `/run` before package installation to avoid the common false positives.
+
 ### Step 4 — Create the bootable USB image
 
 Assembles the kernel and rootfs into a partitioned disk image. **Requires sudo.**
@@ -422,6 +424,23 @@ sudo ./scripts/03_build_archlinux_rootfs.sh
 ```
 
 The script now installs `nano` and fails the rootfs build immediately if any required package transaction fails, instead of producing an incomplete tarball.
+
+### USB image: `losetup ... failed to set up loop device: No such file or directory`
+
+Update to the latest scripts and re-run Step 4:
+
+```bash
+sudo ./scripts/04_create_usb_image.sh
+```
+
+The USB image script now creates the output directory, recreates the image file cleanly, verifies the image exists after partitioning, and checks required host tools before calling `losetup`.
+
+If it still cannot find a loop device, load the loop driver and retry:
+
+```bash
+sudo modprobe loop
+sudo ./scripts/04_create_usb_image.sh
+```
 
 ### Boot: root partition not found
 

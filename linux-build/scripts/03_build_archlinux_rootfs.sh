@@ -44,7 +44,7 @@ ARCH="powerpc64"
 ROOTFS_PACKAGES=(
     filesystem bash coreutils glibc pacman
     systemd systemd-sysvcompat
-    iproute2 iputils dhcpcd openssh
+    iptables iproute2 iputils dhcpcd openssh
     nano less grep sed gawk
     procps-ng psmisc which file findutils
     tar gzip xz bzip2
@@ -152,6 +152,22 @@ info "=== Bootstrapping Arch Linux ppc64 rootfs ==="
 
 # Create base directory structure
 mkdir -p "$ROOTFS_DIR"/{dev,proc,sys,run,tmp,var/{cache/pacman/pkg,lib/pacman,log},etc/pacman.d,usr/{bin,lib,share}}
+chmod 1777 "$ROOTFS_DIR/tmp"
+chmod 0555 "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys"
+
+cleanup_mounts() {
+    umount -l "$ROOTFS_DIR/proc" 2>/dev/null || true
+    umount -l "$ROOTFS_DIR/sys"  2>/dev/null || true
+    umount -l "$ROOTFS_DIR/dev"  2>/dev/null || true
+    umount -l "$ROOTFS_DIR/run"  2>/dev/null || true
+}
+trap cleanup_mounts EXIT
+
+# Pacman install hooks expect these pseudo-filesystems in the target root.
+mount --bind /proc "$ROOTFS_DIR/proc" 2>/dev/null || true
+mount --bind /sys  "$ROOTFS_DIR/sys"  2>/dev/null || true
+mount --bind /dev  "$ROOTFS_DIR/dev"  2>/dev/null || true
+mount --bind /run  "$ROOTFS_DIR/run"  2>/dev/null || true
 
 # Create pacman configuration targeting ArchPOWER ppc64 repos
 cat > "$ROOTFS_DIR/etc/pacman.conf" << 'PACMAN_CONF'
@@ -279,20 +295,6 @@ cp "$QEMU_BIN" "$ROOTFS_DIR/usr/bin/qemu-ppc64-static"
 
 # ─── Configure the rootfs via chroot ──────────────────────────────
 info "=== Configuring rootfs ==="
-
-# Mount pseudo-filesystems for chroot
-mount --bind /proc "$ROOTFS_DIR/proc" 2>/dev/null || true
-mount --bind /sys  "$ROOTFS_DIR/sys"  2>/dev/null || true
-mount --bind /dev  "$ROOTFS_DIR/dev"  2>/dev/null || true
-mount --bind /run  "$ROOTFS_DIR/run"  2>/dev/null || true
-
-cleanup_mounts() {
-    umount -l "$ROOTFS_DIR/proc" 2>/dev/null || true
-    umount -l "$ROOTFS_DIR/sys"  2>/dev/null || true
-    umount -l "$ROOTFS_DIR/dev"  2>/dev/null || true
-    umount -l "$ROOTFS_DIR/run"  2>/dev/null || true
-}
-trap cleanup_mounts EXIT
 
 # DNS resolution inside chroot
 cp /etc/resolv.conf "$ROOTFS_DIR/etc/resolv.conf" 2>/dev/null || true

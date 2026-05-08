@@ -1,5 +1,11 @@
 # Changelog
 
+## Alpha 1.09 - Rootfs hook mounts and USB image creation checks
+
+- Commit: this Step 3/Step 4 hardening update
+- Change: Mounted `/proc`, `/sys`, `/dev`, and `/run` in the target rootfs before package installation hooks run, added `iptables` explicitly to the rootfs package set, and made Step 4 create and validate the image output path before attaching a loop device.
+- Why: Pacman/systemd hooks expect pseudo-filesystems and device nodes during rootfs bootstrap; mounting them reduces noisy hook warnings such as missing `/dev/null` or `/proc`. Step 4 could reach `losetup` with a missing image path, so it now creates the parent directory, recreates the image file cleanly, attempts to load the loop driver if needed, validates required host tools, and stops with a clearer error if image creation fails.
+
 ## Alpha 1.08 - Rootfs package failure handling and default password
 
 - Commit: `d50432d`

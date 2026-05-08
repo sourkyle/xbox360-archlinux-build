@@ -50,9 +50,19 @@ fi
 [ -f "$KERNEL_IMAGE" ]   || error "Kernel image not found: $KERNEL_IMAGE (run 02_build_kernel.sh first)"
 [ -f "$ROOTFS_TARBALL" ] || error "Rootfs tarball not found: $ROOTFS_TARBALL (run 03_build_archlinux_rootfs.sh first)"
 
+for cmd in truncate parted losetup mkfs.vfat mkswap mkfs.ext4 mount umount blkid tar; do
+    if ! command -v "$cmd" &>/dev/null; then
+        error "Required command not found: $cmd
+  On Arch Linux: sudo pacman -S coreutils parted util-linux dosfstools e2fsprogs tar"
+    fi
+done
+
 # ─── Create disk image ───────────────────────────────────────────
 info "=== Creating ${IMAGE_SIZE} disk image ==="
+mkdir -p "$(dirname "$IMAGE_FILE")"
+rm -f "$IMAGE_FILE"
 truncate -s "$IMAGE_SIZE" "$IMAGE_FILE"
+[ -f "$IMAGE_FILE" ] || error "Failed to create disk image: $IMAGE_FILE"
 
 # ─── Partition the image ──────────────────────────────────────────
 info "=== Partitioning image (MBR) ==="
@@ -61,8 +71,12 @@ parted -s "$IMAGE_FILE" \
     mkpart primary fat32 1MiB ${BOOT_SIZE_MB}MiB \
     mkpart primary linux-swap ${BOOT_SIZE_MB}MiB $((BOOT_SIZE_MB + SWAP_SIZE_MB))MiB \
     mkpart primary ext4 $((BOOT_SIZE_MB + SWAP_SIZE_MB))MiB 100%
+[ -f "$IMAGE_FILE" ] || error "Disk image disappeared after partitioning: $IMAGE_FILE"
 
 # ─── Set up loop device ──────────────────────────────────────────
+if ! losetup -f &>/dev/null; then
+    command -v modprobe &>/dev/null && modprobe loop 2>/dev/null || true
+fi
 LOOP_DEV=$(losetup --find --show --partscan "$IMAGE_FILE")
 info "Loop device: $LOOP_DEV"
 
