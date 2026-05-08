@@ -1,5 +1,11 @@
 # Changelog
 
+## Alpha 1.10 - Loop device diagnostics for USB image creation
+
+- Commit: this loop-device diagnostics update
+- Change: Added an explicit loop-device availability check before `losetup --partscan`, captured `losetup` failure output, and printed host recovery steps for missing loop modules/devices.
+- Why: Step 4 requires Linux loop devices to partition and populate the disk image. On Arch, `modprobe: FATAL: Module loop not found in directory /lib/modules/$(uname -r)` usually means the running kernel and installed module tree are out of sync after an update, or a custom kernel lacks `CONFIG_BLK_DEV_LOOP`. The new diagnostics fail before image population with direct recovery instructions.
+
 ## Alpha 1.09 - Rootfs hook mounts and USB image creation checks
 
 - Commit: `247e968`

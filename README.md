@@ -442,6 +442,23 @@ sudo modprobe loop
 sudo ./scripts/04_create_usb_image.sh
 ```
 
+If `modprobe loop` fails with a message like `Module loop not found in directory /lib/modules/$(uname -r)`, your running Arch kernel probably does not match the installed module tree after a system update. Reinstall/update the kernel package and reboot:
+
+```bash
+sudo pacman -Syu linux
+sudo reboot
+```
+
+After reboot:
+
+```bash
+sudo modprobe loop
+losetup -f
+sudo ./scripts/04_create_usb_image.sh
+```
+
+If you are using a custom host kernel, make sure it was built with `CONFIG_BLK_DEV_LOOP`.
+
 ### Boot: root partition not found
 
 The 360's USB device enumeration is non-deterministic. The device that was `/dev/sdb3` last boot might be `/dev/sdc3` next time. The kboot.conf uses `root=UUID=...` to avoid this, but if it still fails:

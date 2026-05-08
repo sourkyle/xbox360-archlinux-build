@@ -42,6 +42,34 @@ info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
+ensure_loop_device_available() {
+    if losetup -f &>/dev/null; then
+        return 0
+    fi
+
+    if command -v modprobe &>/dev/null; then
+        modprobe loop 2>/dev/null || true
+    fi
+
+    if losetup -f &>/dev/null; then
+        return 0
+    fi
+
+    error "No usable loop device is available on this host.
+The loop driver could not be loaded for the running kernel: $(uname -r)
+
+On Arch Linux this usually means the installed kernel modules do not match
+the running kernel after an update. Try:
+  sudo pacman -Syu linux
+  sudo reboot
+
+After reboot, verify:
+  sudo modprobe loop
+  losetup -f
+
+If you are using a custom kernel, enable CONFIG_BLK_DEV_LOOP."
+}
+
 if [ "$(id -u)" -ne 0 ]; then
     error "This script must be run as root"
 fi
@@ -74,10 +102,18 @@ parted -s "$IMAGE_FILE" \
 [ -f "$IMAGE_FILE" ] || error "Disk image disappeared after partitioning: $IMAGE_FILE"
 
 # ─── Set up loop device ──────────────────────────────────────────
-if ! losetup -f &>/dev/null; then
-    command -v modprobe &>/dev/null && modprobe loop 2>/dev/null || true
+ensure_loop_device_available
+if ! LOOP_DEV=$(losetup --find --show --partscan "$IMAGE_FILE" 2>&1); then
+    error "Failed to attach disk image to a loop device:
+$LOOP_DEV
+
+Image path: $IMAGE_FILE
+Image exists: $(if [ -f "$IMAGE_FILE" ]; then echo yes; else echo no; fi)
+Running kernel: $(uname -r)
+
+If the error mentions missing loop devices, reboot into a kernel with matching
+modules or enable CONFIG_BLK_DEV_LOOP."
 fi
-LOOP_DEV=$(losetup --find --show --partscan "$IMAGE_FILE")
 info "Loop device: $LOOP_DEV"
 
 cleanup() {
