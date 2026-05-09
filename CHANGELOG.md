@@ -2,7 +2,7 @@
 
 ## Alpha 1.12 - Xenon rescue init for PID 1 crashes
 
-- Commit: this rescue-init boot update
+- Commit: `00ee83c`
 - Change: Added `/sbin/xenon-rescue-init` to the rootfs and made the default `archlinux` kboot entries use it as PID 1. The original systemd boot remains available as `archlinux_systemd` and `archlinux_systemd_safe`.
 - Why: After the root filesystem mounts successfully, `Attempted to kill init! exitcode=0x00000004` indicates PID 1 likely died from `SIGILL` / illegal instruction. ArchPOWER's prebuilt systemd may use instructions unsupported by Xenon's VMX128-era CPU. The rescue init keeps PID 1 alive and provides a shell so the console can boot far enough for diagnostics.
 
