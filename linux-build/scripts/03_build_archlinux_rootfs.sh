@@ -392,6 +392,38 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 GETTY
 
+# Rescue PID 1 for Xenon.  If ArchPOWER's systemd trips an unsupported CPU
+# instruction on the Xbox 360, this init keeps the kernel alive and provides a
+# root shell for diagnostics.
+cat > "$ROOTFS_DIR/sbin/xenon-rescue-init" << 'XENON_RESCUE_INIT'
+#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
+
+mount -o remount,rw / 2>/dev/null || true
+mkdir -p /proc /sys /dev /dev/pts /run /tmp
+chmod 1777 /tmp
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+
+hostname xenon360 2>/dev/null || true
+
+echo
+echo "Xenon rescue init is running."
+echo "The full systemd entry is available as archlinux_systemd in kboot.conf."
+echo "Type 'exec /sbin/init' to test systemd manually, or use this shell to inspect logs."
+echo
+
+while true; do
+    /bin/bash -l
+    echo "Rescue shell exited; restarting to keep PID 1 alive."
+    sleep 1
+done
+XENON_RESCUE_INIT
+chmod 0755 "$ROOTFS_DIR/sbin/xenon-rescue-init"
+
 # ─── Remove QEMU binary from final rootfs ────────────────────────
 rm -f "$ROOTFS_DIR/usr/bin/qemu-ppc64-static"
 

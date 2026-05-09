@@ -166,8 +166,10 @@ cat > "$MOUNT_BOOT/kboot.conf" << KBOOT
 speedup=1
 timeout=30
 
-archlinux="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
-archlinux_safe="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
+archlinux="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb init=/sbin/xenon-rescue-init"
+archlinux_safe="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb init=/sbin/xenon-rescue-init"
+archlinux_systemd="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
+archlinux_systemd_safe="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
 KBOOT
 
 info "Boot partition contents:"

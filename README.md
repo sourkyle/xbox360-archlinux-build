@@ -214,6 +214,8 @@ Key parameters you can tweak:
 | `rootwait` | Wait for USB storage to enumerate before mounting root |
 | `single` | Boot to single-user mode (troubleshooting) |
 
+Current images make `archlinux` and `archlinux_safe` boot through `/sbin/xenon-rescue-init`, a small shell-based PID 1. This avoids kernel panic if ArchPOWER's systemd hits an unsupported Xenon CPU instruction. The generated menu also includes `archlinux_systemd` and `archlinux_systemd_safe` entries for testing the normal systemd path.
+
 ---
 
 ## Post-Boot Setup
@@ -470,6 +472,10 @@ The 360's USB device enumeration is non-deterministic. The device that was `/dev
 ### Boot: `VFS: unable to mount root fs` / `root= is invalid`
 
 If the panic says `root= is invalid` or shows `root=UUID=...`, rebuild the USB image with the latest scripts. The kernel cannot reliably resolve filesystem `UUID=` directly without an initramfs; the generated `kboot.conf` now uses the root partition `PARTUUID=...`, while `/etc/fstab` still uses filesystem UUIDs inside userspace.
+
+### Boot: `Attempted to kill init! exitcode=0x00000004`
+
+This usually means PID 1 died from `SIGILL` / illegal instruction. On Xenon, ArchPOWER's prebuilt systemd may use an instruction the Xbox 360 CPU does not support. Rebuild the rootfs and USB image with the latest scripts; the default `archlinux` entry now boots a rescue shell via `/sbin/xenon-rescue-init`. Use `archlinux_systemd` only when you want to test systemd directly.
 
 ---
 
