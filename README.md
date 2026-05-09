@@ -186,7 +186,7 @@ sudo eject /dev/sdX
 
 ### If it doesn't boot
 
-- **"root partition not found"**: The kernel tells you which devices it detected and their UUIDs. Mount the FAT32 partition on your PC, edit `kboot.conf`, and fix the `root=UUID=...` to match. Also update `/etc/fstab` on the ext4 partition.
+- **"root partition not found"**: The kernel tells you which devices it detected and their partition IDs. Mount the FAT32 partition on your PC, edit `kboot.conf`, and fix the `root=PARTUUID=...` to match. Also update `/etc/fstab` on the ext4 partition if filesystem UUIDs changed.
 - **No video output**: Try adding `videomode=0` to `kboot.conf` for 640x480 VGA, or `videomode=10` for HDMI 720p.
 - **Devices not detected**: Power-cycle the console fully — unplug the PSU for 30 seconds. The 360's USB detection is unreliable on cold boot.
 - **XeLL too old**: If XeLL won't boot the kernel, you need to rebuild XeLL with the current toolchain. See the XeLL section below.
@@ -200,8 +200,8 @@ The generated `kboot.conf` on the FAT32 partition:
 speedup=1
 timeout=30
 
-archlinux="usb:/vmlinux root=UUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
-archlinux_safe="usb:/vmlinux root=UUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
+archlinux="usb:/vmlinux root=PARTUUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
+archlinux_safe="usb:/vmlinux root=PARTUUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
 ```
 
 Key parameters you can tweak:
@@ -461,11 +461,15 @@ If you are using a custom host kernel, make sure it was built with `CONFIG_BLK_D
 
 ### Boot: root partition not found
 
-The 360's USB device enumeration is non-deterministic. The device that was `/dev/sdb3` last boot might be `/dev/sdc3` next time. The kboot.conf uses `root=UUID=...` to avoid this, but if it still fails:
+The 360's USB device enumeration is non-deterministic. The device that was `/dev/sdb3` last boot might be `/dev/sdc3` next time. The kboot.conf uses `root=PARTUUID=...` to avoid this, but if it still fails:
 
-1. Check the kernel output — it prints detected devices and their UUIDs
+1. Check the kernel output — it prints detected devices and partition IDs
 2. Mount the FAT32 partition on your PC and update `kboot.conf`
 3. Also update `/etc/fstab` on the ext4 partition
+
+### Boot: `VFS: unable to mount root fs` / `root= is invalid`
+
+If the panic says `root= is invalid` or shows `root=UUID=...`, rebuild the USB image with the latest scripts. The kernel cannot reliably resolve filesystem `UUID=` directly without an initramfs; the generated `kboot.conf` now uses the root partition `PARTUUID=...`, while `/etc/fstab` still uses filesystem UUIDs inside userspace.
 
 ---
 

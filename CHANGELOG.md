@@ -1,5 +1,11 @@
 # Changelog
 
+## Alpha 1.11 - Use PARTUUID for kernel root device
+
+- Commit: this root mount fix
+- Change: Updated Step 4 `kboot.conf` generation to boot with `root=PARTUUID=...` and added a fatal check if the root partition PARTUUID cannot be read.
+- Why: Without an initramfs, the kernel can resolve partition identifiers such as `PARTUUID`, but filesystem `UUID=` is normally resolved by userspace tooling. Using `root=UUID=...` caused XeLL-launched kernels to reject the root argument with `root= is invalid` and panic with `VFS: unable to mount root fs on unknown-block(0,0)`.
+
 ## Alpha 1.10 - Loop device diagnostics for USB image creation
 
 - Commit: `ddd00d1`

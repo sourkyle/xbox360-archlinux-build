@@ -143,9 +143,15 @@ mount "${LOOP_DEV}p3" "$MOUNT_ROOT"
 info "=== Populating boot partition ==="
 cp "$KERNEL_IMAGE" "$MOUNT_BOOT/vmlinux"
 
-# Get partition UUIDs
+# Get partition identifiers.  The kernel can resolve PARTUUID without an
+# initramfs; filesystem UUIDs are kept for fstab once userspace starts.
 ROOT_UUID=$(blkid -s UUID -o value "${LOOP_DEV}p3")
 SWAP_UUID=$(blkid -s UUID -o value "${LOOP_DEV}p2")
+ROOT_PARTUUID=$(blkid -s PARTUUID -o value "${LOOP_DEV}p3")
+
+if [ -z "$ROOT_PARTUUID" ]; then
+    error "Could not determine PARTUUID for root partition: ${LOOP_DEV}p3"
+fi
 
 # Create kboot.conf
 cat > "$MOUNT_BOOT/kboot.conf" << KBOOT
@@ -160,8 +166,8 @@ cat > "$MOUNT_BOOT/kboot.conf" << KBOOT
 speedup=1
 timeout=30
 
-archlinux="usb:/vmlinux root=UUID=${ROOT_UUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
-archlinux_safe="usb:/vmlinux root=UUID=${ROOT_UUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
+archlinux="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
+archlinux_safe="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
 KBOOT
 
 info "Boot partition contents:"
