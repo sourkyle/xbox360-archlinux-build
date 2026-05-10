@@ -214,7 +214,7 @@ Key parameters you can tweak:
 | `rootwait` | Wait for USB storage to enumerate before mounting root |
 | `single` | Boot to single-user mode (troubleshooting) |
 
-Current images make `archlinux` and `archlinux_safe` boot through `/sbin/xenon-rescue-init`, a small shell-based PID 1. This avoids kernel panic if ArchPOWER's systemd hits an unsupported Xenon CPU instruction. The generated menu also includes `archlinux_systemd` and `archlinux_systemd_safe` entries for testing the normal systemd path.
+Current images make `archlinux` and `archlinux_safe` boot through `/sbin/xenon-rescue-init`, a tiny native PowerPC64 PID 1 built by the Xenon cross-toolchain. This avoids kernel panic if ArchPOWER's bash or systemd hits an unsupported Xenon CPU instruction. The generated menu also includes `archlinux_systemd` and `archlinux_systemd_safe` entries for testing the normal systemd path.
 
 ---
 
@@ -475,7 +475,20 @@ If the panic says `root= is invalid` or shows `root=UUID=...`, rebuild the USB i
 
 ### Boot: `Attempted to kill init! exitcode=0x00000004`
 
-This usually means PID 1 died from `SIGILL` / illegal instruction. On Xenon, ArchPOWER's prebuilt systemd may use an instruction the Xbox 360 CPU does not support. Rebuild the rootfs and USB image with the latest scripts; the default `archlinux` entry now boots a rescue shell via `/sbin/xenon-rescue-init`. Use `archlinux_systemd` only when you want to test systemd directly.
+This usually means PID 1 died from `SIGILL` / illegal instruction. On Xenon, ArchPOWER's prebuilt bash or systemd may use an instruction the Xbox 360 CPU does not support. Rebuild the rootfs and USB image with the latest scripts; the default `archlinux` entry now boots a native rescue init via `/sbin/xenon-rescue-init`. Use `archlinux_systemd` only when you want to test systemd directly.
+
+The rescue prompt supports:
+
+```text
+help       show available commands
+mounts     remount / and mount proc/sys/dev/run
+ls [dir]   list files
+cat <file> print a file
+sh         try /bin/bash as a child process
+systemd    exec /sbin/init as PID 1
+reboot     reboot
+poweroff   power off
+```
 
 ---
 

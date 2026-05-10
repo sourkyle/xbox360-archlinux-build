@@ -41,6 +41,10 @@ ROOT_PASSWORD="arch"
 ARCHPOWER_MIRROR="https://repo.archlinuxpower.org"
 ARCHPOWER_ISO_MIRROR="https://archlinuxpower.org/iso"
 ARCH="powerpc64"
+TARGET="powerpc64-linux-gnu"
+PREFIX="${TOOLCHAIN_PREFIX:-/usr/local/xenon-linux}"
+CROSS_CC="${TARGET}-gcc"
+RESCUE_INIT_SRC="${BUILD_ROOT}/rescue/xenon-rescue-init.c"
 ROOTFS_PACKAGES=(
     filesystem bash coreutils glibc pacman
     systemd systemd-sysvcompat
@@ -65,6 +69,8 @@ done
 info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
+
+export PATH="${PREFIX}/bin:${PATH}"
 
 # Must be root
 if [ "$(id -u)" -ne 0 ]; then
@@ -120,7 +126,7 @@ if [ "$BINFMT_OK" -eq 0 ]; then
 fi
 
 # ─── Verify other prerequisites ───────────────────────────────────
-for cmd in wget tar; do
+for cmd in wget tar "$CROSS_CC"; do
     if ! command -v "$cmd" &>/dev/null; then
         error "Required command not found: $cmd"
     fi
@@ -392,36 +398,20 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 GETTY
 
-# Rescue PID 1 for Xenon.  If ArchPOWER's systemd trips an unsupported CPU
-# instruction on the Xbox 360, this init keeps the kernel alive and provides a
-# root shell for diagnostics.
-cat > "$ROOTFS_DIR/sbin/xenon-rescue-init" << 'XENON_RESCUE_INIT'
-#!/bin/bash
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
-
-mount -o remount,rw / 2>/dev/null || true
-mkdir -p /proc /sys /dev /dev/pts /run /tmp
-chmod 1777 /tmp
-mount -t proc proc /proc 2>/dev/null || true
-mount -t sysfs sysfs /sys 2>/dev/null || true
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-mount -t devpts devpts /dev/pts 2>/dev/null || true
-mount -t tmpfs tmpfs /run 2>/dev/null || true
-
-hostname xenon360 2>/dev/null || true
-
-echo
-echo "Xenon rescue init is running."
-echo "The full systemd entry is available as archlinux_systemd in kboot.conf."
-echo "Type 'exec /sbin/init' to test systemd manually, or use this shell to inspect logs."
-echo
-
-while true; do
-    /bin/bash -l
-    echo "Rescue shell exited; restarting to keep PID 1 alive."
-    sleep 1
-done
-XENON_RESCUE_INIT
+# Rescue PID 1 for Xenon.  Build this with the Xenon cross-toolchain rather
+# than ArchPOWER userland so PID 1 survives if bash/systemd hit SIGILL.
+if [ ! -f "$RESCUE_INIT_SRC" ]; then
+    error "Rescue init source not found: $RESCUE_INIT_SRC"
+fi
+info "Building Xenon native rescue init..."
+if ! "$CROSS_CC" -static -Os -s -fno-stack-protector -mno-altivec -mno-vsx \
+    "$RESCUE_INIT_SRC" -o "$ROOTFS_DIR/sbin/xenon-rescue-init"; then
+    warn "Retrying rescue init build without -mno-vsx"
+    "$CROSS_CC" -static -Os -s -fno-stack-protector -mno-altivec \
+        "$RESCUE_INIT_SRC" -o "$ROOTFS_DIR/sbin/xenon-rescue-init" || {
+            error "Failed to build Xenon rescue init with $CROSS_CC"
+        }
+fi
 chmod 0755 "$ROOTFS_DIR/sbin/xenon-rescue-init"
 
 # ─── Remove QEMU binary from final rootfs ────────────────────────
