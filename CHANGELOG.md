@@ -2,7 +2,7 @@
 
 ## Alpha 1.13 - Native Xenon rescue init
 
-- Commit: this native rescue init update
+- Commit: `3482210`
 - Change: Replaced the bash-script rescue PID 1 with a static PowerPC64 C rescue init built by the Xenon cross-toolchain during Step 3.
 - Why: If `/bin/bash` itself is built with unsupported instructions, a script-based `init=/sbin/xenon-rescue-init` still dies with `SIGILL` as PID 1 and panics the kernel. The native rescue init is compiled with the VMX128-safe toolchain, keeps PID 1 alive, mounts basic pseudo-filesystems, and provides built-in diagnostic commands even when ArchPOWER userland programs crash.
 
