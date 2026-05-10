@@ -42,6 +42,34 @@ info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
+ensure_loop_device_available() {
+    if losetup -f &>/dev/null; then
+        return 0
+    fi
+
+    if command -v modprobe &>/dev/null; then
+        modprobe loop 2>/dev/null || true
+    fi
+
+    if losetup -f &>/dev/null; then
+        return 0
+    fi
+
+    error "No usable loop device is available on this host.
+The loop driver could not be loaded for the running kernel: $(uname -r)
+
+On Arch Linux this usually means the installed kernel modules do not match
+the running kernel after an update. Try:
+  sudo pacman -Syu linux
+  sudo reboot
+
+After reboot, verify:
+  sudo modprobe loop
+  losetup -f
+
+If you are using a custom kernel, enable CONFIG_BLK_DEV_LOOP."
+}
+
 if [ "$(id -u)" -ne 0 ]; then
     error "This script must be run as root"
 fi
@@ -50,9 +78,19 @@ fi
 [ -f "$KERNEL_IMAGE" ]   || error "Kernel image not found: $KERNEL_IMAGE (run 02_build_kernel.sh first)"
 [ -f "$ROOTFS_TARBALL" ] || error "Rootfs tarball not found: $ROOTFS_TARBALL (run 03_build_archlinux_rootfs.sh first)"
 
+for cmd in truncate parted losetup mkfs.vfat mkswap mkfs.ext4 mount umount blkid tar; do
+    if ! command -v "$cmd" &>/dev/null; then
+        error "Required command not found: $cmd
+  On Arch Linux: sudo pacman -S coreutils parted util-linux dosfstools e2fsprogs tar"
+    fi
+done
+
 # ─── Create disk image ───────────────────────────────────────────
 info "=== Creating ${IMAGE_SIZE} disk image ==="
+mkdir -p "$(dirname "$IMAGE_FILE")"
+rm -f "$IMAGE_FILE"
 truncate -s "$IMAGE_SIZE" "$IMAGE_FILE"
+[ -f "$IMAGE_FILE" ] || error "Failed to create disk image: $IMAGE_FILE"
 
 # ─── Partition the image ──────────────────────────────────────────
 info "=== Partitioning image (MBR) ==="
@@ -61,9 +99,21 @@ parted -s "$IMAGE_FILE" \
     mkpart primary fat32 1MiB ${BOOT_SIZE_MB}MiB \
     mkpart primary linux-swap ${BOOT_SIZE_MB}MiB $((BOOT_SIZE_MB + SWAP_SIZE_MB))MiB \
     mkpart primary ext4 $((BOOT_SIZE_MB + SWAP_SIZE_MB))MiB 100%
+[ -f "$IMAGE_FILE" ] || error "Disk image disappeared after partitioning: $IMAGE_FILE"
 
 # ─── Set up loop device ──────────────────────────────────────────
-LOOP_DEV=$(losetup --find --show --partscan "$IMAGE_FILE")
+ensure_loop_device_available
+if ! LOOP_DEV=$(losetup --find --show --partscan "$IMAGE_FILE" 2>&1); then
+    error "Failed to attach disk image to a loop device:
+$LOOP_DEV
+
+Image path: $IMAGE_FILE
+Image exists: $(if [ -f "$IMAGE_FILE" ]; then echo yes; else echo no; fi)
+Running kernel: $(uname -r)
+
+If the error mentions missing loop devices, reboot into a kernel with matching
+modules or enable CONFIG_BLK_DEV_LOOP."
+fi
 info "Loop device: $LOOP_DEV"
 
 cleanup() {
@@ -93,9 +143,15 @@ mount "${LOOP_DEV}p3" "$MOUNT_ROOT"
 info "=== Populating boot partition ==="
 cp "$KERNEL_IMAGE" "$MOUNT_BOOT/vmlinux"
 
-# Get partition UUIDs
+# Get partition identifiers.  The kernel can resolve PARTUUID without an
+# initramfs; filesystem UUIDs are kept for fstab once userspace starts.
 ROOT_UUID=$(blkid -s UUID -o value "${LOOP_DEV}p3")
 SWAP_UUID=$(blkid -s UUID -o value "${LOOP_DEV}p2")
+ROOT_PARTUUID=$(blkid -s PARTUUID -o value "${LOOP_DEV}p3")
+
+if [ -z "$ROOT_PARTUUID" ]; then
+    error "Could not determine PARTUUID for root partition: ${LOOP_DEV}p3"
+fi
 
 # Create kboot.conf
 cat > "$MOUNT_BOOT/kboot.conf" << KBOOT
@@ -110,8 +166,10 @@ cat > "$MOUNT_BOOT/kboot.conf" << KBOOT
 speedup=1
 timeout=30
 
-archlinux="usb:/vmlinux root=UUID=${ROOT_UUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
-archlinux_safe="usb:/vmlinux root=UUID=${ROOT_UUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
+archlinux="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb init=/sbin/xenon-rescue-init"
+archlinux_safe="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb init=/sbin/xenon-rescue-init"
+archlinux_systemd="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
+archlinux_systemd_safe="usb:/vmlinux root=PARTUUID=${ROOT_PARTUUID} rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
 KBOOT
 
 info "Boot partition contents:"

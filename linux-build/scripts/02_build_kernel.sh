@@ -53,6 +53,14 @@ info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
+# Verify host tools needed by the kernel build before make fails mid-build.
+for cmd in bc bison flex make patch tar wget; do
+    if ! command -v "$cmd" &>/dev/null; then
+        error "Required host command not found: $cmd
+  On Arch Linux: sudo pacman -S base-devel bc flex bison wget"
+    fi
+done
+
 # Verify cross-compiler exists
 if ! command -v "${TARGET}-gcc" &>/dev/null; then
     error "Cross-compiler not found. Run 01_build_toolchain.sh first."

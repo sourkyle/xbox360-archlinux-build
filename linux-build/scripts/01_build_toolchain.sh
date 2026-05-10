@@ -22,18 +22,74 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_ROOT="$(dirname "$SCRIPT_DIR")"
 
+info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
+warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
+error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
+
 BINUTILS_VERSION="2.42"
 GCC_VERSION="12.4.0"
 GLIBC_VERSION="2.39"
 LINUX_VERSION="6.5"
 
 TARGET="powerpc64-linux-gnu"
-PREFIX="${1:-/usr/local/xenon-linux}"
+PREFIX="/usr/local/xenon-linux"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --prefix)
+            [ $# -ge 2 ] || error "--prefix requires a path"
+            PREFIX="$2"
+            shift 2
+            ;;
+        --prefix=*)
+            PREFIX="${1#--prefix=}"
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--prefix /path/to/install]"
+            exit 0
+            ;;
+        -*)
+            error "Unknown option: $1"
+            ;;
+        *)
+            # Backwards-compatible shorthand: ./01_build_toolchain.sh /path/to/install
+            PREFIX="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ "$PREFIX" =~ [[:space:]] ]]; then
+    error "Install prefix cannot contain spaces: $PREFIX"
+fi
+
 SYSROOT="${PREFIX}/${TARGET}/sysroot"
+CROSS_CC="${TARGET}-gcc"
+CROSS_AR="${TARGET}-ar"
+CROSS_RANLIB="${TARGET}-ranlib"
+BUILD_GNU_TYPE="$(gcc -dumpmachine)"
 
 JOBS="$(nproc)"
-SRC_DIR="${BUILD_ROOT}/toolchain/src"
-BUILD_DIR="${BUILD_ROOT}/toolchain/build"
+TOOLCHAIN_BUILD_ROOT="$BUILD_ROOT"
+SAFE_LINK=""
+if [[ "$BUILD_ROOT" =~ [[:space:]] ]]; then
+    SAFE_LINK="${TMPDIR:-/tmp}/xenon-linux-build-$(id -u)"
+    if [ -L "$SAFE_LINK" ]; then
+        if [ "$(readlink "$SAFE_LINK")" != "$BUILD_ROOT" ]; then
+            rm -f "$SAFE_LINK"
+            ln -s "$BUILD_ROOT" "$SAFE_LINK"
+        fi
+    elif [ -e "$SAFE_LINK" ]; then
+        error "Cannot create no-space build path at $SAFE_LINK because it already exists"
+    else
+        ln -s "$BUILD_ROOT" "$SAFE_LINK"
+    fi
+    TOOLCHAIN_BUILD_ROOT="$SAFE_LINK"
+    warn "Build path contains spaces; using no-space alias: $TOOLCHAIN_BUILD_ROOT"
+fi
+SRC_DIR="${TOOLCHAIN_BUILD_ROOT}/toolchain/src"
+BUILD_DIR="${TOOLCHAIN_BUILD_ROOT}/toolchain/build"
 
 BINUTILS_URL="https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VERSION}.tar.xz"
 GCC_URL="https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VERSION}/gcc-${GCC_VERSION}.tar.xz"
@@ -41,10 +97,6 @@ GLIBC_URL="https://ftp.gnu.org/gnu/glibc/glibc-${GLIBC_VERSION}.tar.xz"
 LINUX_URL="https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${LINUX_VERSION}.tar.xz"
 
 export PATH="${PREFIX}/bin:${PATH}"
-
-info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
-warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
-error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
 download() {
     local url="$1" dest="$2"
@@ -188,6 +240,7 @@ if [ ! -f "$PREFIX/bin/${TARGET}-gcc" ]; then
         --disable-shared \
         --disable-multilib \
         --disable-threads \
+        --disable-libsanitizer \
         --disable-libssp \
         --disable-libgomp \
         --disable-libquadmath \
@@ -204,8 +257,50 @@ else
 fi
 
 # ─── Step 4: Glibc ────────────────────────────────────────────────
+glibc_is_installed() {
+    [ -f "$SYSROOT/lib/libc.so.6" ] || \
+    [ -f "$SYSROOT/lib64/libc.so.6" ] || \
+    [ -f "$SYSROOT/usr/lib/libc.so.6" ] || \
+    [ -f "$SYSROOT/usr/lib64/libc.so.6" ]
+}
+
+ensure_glibc_startfiles() {
+    local crt_file src dest
+
+    # PowerPC64 glibc commonly installs ABI64 objects under lib64.  GCC's
+    # build-time sysroot search still walks through usr/lib, so keep that
+    # directory present and expose startup files there when glibc used lib64.
+    mkdir -p "$SYSROOT/lib" "$SYSROOT/usr/lib"
+
+    for crt_file in crt1.o crti.o crtn.o; do
+        if [ -f "$SYSROOT/usr/lib/$crt_file" ] || [ -f "$SYSROOT/lib/$crt_file" ]; then
+            continue
+        fi
+
+        src=""
+        for candidate in \
+            "$SYSROOT/usr/lib64/$crt_file" \
+            "$SYSROOT/lib64/$crt_file" \
+            "$SYSROOT/usr/lib/powerpc64-linux-gnu/$crt_file" \
+            "$SYSROOT/lib/powerpc64-linux-gnu/$crt_file"; do
+            if [ -f "$candidate" ]; then
+                src="$candidate"
+                break
+            fi
+        done
+
+        if [ -z "$src" ]; then
+            error "glibc startup file not found in sysroot after install: $crt_file"
+        fi
+
+        dest="$SYSROOT/usr/lib/$crt_file"
+        cp -a "$src" "$dest"
+        info "Copied $crt_file into sysroot usr/lib"
+    done
+}
+
 GLIBC_BUILD="$BUILD_DIR/glibc"
-if [ ! -f "$SYSROOT/lib/libc.so.6" ]; then
+if ! glibc_is_installed; then
     info "=== Building glibc ${GLIBC_VERSION} ==="
     if [ -d "$GLIBC_BUILD" ]; then
         info "Cleaning previous glibc build directory..."
@@ -214,19 +309,38 @@ if [ ! -f "$SYSROOT/lib/libc.so.6" ]; then
     mkdir -p "$GLIBC_BUILD"
     cd "$GLIBC_BUILD"
 
+    for tool in "$CROSS_CC" "$CROSS_AR" "$CROSS_RANLIB"; do
+        if ! command -v "$tool" &>/dev/null; then
+            error "Required cross tool not found before glibc build: $tool"
+        fi
+    done
+
     "$SRC_DIR/glibc-${GLIBC_VERSION}/configure" \
         --host="$TARGET" \
-        --build="$(gcc -dumpmachine)" \
+        --build="$BUILD_GNU_TYPE" \
         --prefix="/usr" \
         --with-headers="$SYSROOT/usr/include" \
         --disable-multilib \
         --disable-werror \
-        libc_cv_forced_unwind=yes
-    make -j"$JOBS"
+        BUILD_CC="gcc" \
+        CC="$CROSS_CC" \
+        CXX="no" \
+        AR="$CROSS_AR" \
+        RANLIB="$CROSS_RANLIB" \
+        libc_cv_forced_unwind=yes \
+        libc_cv_c_cleanup=yes
+    make -j"$JOBS" \
+        BUILD_CC="gcc" \
+        CC="$CROSS_CC" \
+        CXX= \
+        AR="$CROSS_AR" \
+        RANLIB="$CROSS_RANLIB"
     make install DESTDIR="$SYSROOT"
+    ensure_glibc_startfiles
     info "Glibc installed"
 else
     info "Glibc already installed, skipping"
+    ensure_glibc_startfiles
 fi
 
 # ─── Step 5: GCC (stage 2 — full C/C++ with libc) ────────────────
@@ -245,6 +359,7 @@ if [ ! -f "$PREFIX/bin/${TARGET}-g++" ]; then
         --with-sysroot="$SYSROOT" \
         --disable-nls \
         --disable-multilib \
+        --disable-libsanitizer \
         --enable-shared \
         --enable-threads=posix \
         --enable-languages=c,c++ \

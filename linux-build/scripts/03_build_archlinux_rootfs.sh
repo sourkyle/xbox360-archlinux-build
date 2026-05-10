@@ -14,10 +14,10 @@
 #   6. Applies Xbox 360 hardware tweaks (ZRAM, framebuffer getty)
 #   7. Packages the rootfs as a tarball
 #
-# Usage: ./03_build_archlinux_rootfs.sh [--output /path/to/rootfs.tar.gz]
+# Usage: ./03_build_archlinux_rootfs.sh [--output /path/to/rootfs.tar.gz] [--root-password arch]
 #
 # Prerequisites (Arch Linux host):
-#   pacman -S qemu-user-static arch-install-scripts dosfstools e2fsprogs parted
+#   pacman -Syu qemu-user-static arch-install-scripts dosfstools e2fsprogs parted
 #   yay -S qemu-user-static-binfmt
 #   sudo systemctl restart systemd-binfmt
 #
@@ -35,11 +35,21 @@ OUTPUT_TARBALL="${OUTPUT_DIR}/archlinux-xenon-rootfs.tar.gz"
 HOSTNAME="xenon360"
 TIMEZONE="UTC"
 LOCALE="en_US.UTF-8"
+ROOT_PASSWORD="arch"
 
 # ArchPOWER repository configuration
 ARCHPOWER_MIRROR="https://repo.archlinuxpower.org"
 ARCHPOWER_ISO_MIRROR="https://archlinuxpower.org/iso"
 ARCH="powerpc64"
+ROOTFS_PACKAGES=(
+    filesystem bash coreutils glibc pacman
+    systemd systemd-sysvcompat
+    iptables iproute2 iputils dhcpcd openssh
+    nano less grep sed gawk
+    procps-ng psmisc which file findutils
+    tar gzip xz bzip2
+    shadow util-linux e2fsprogs kmod
+)
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -47,6 +57,7 @@ while [[ $# -gt 0 ]]; do
         --output) OUTPUT_TARBALL="$2"; shift 2 ;;
         --hostname) HOSTNAME="$2"; shift 2 ;;
         --timezone) TIMEZONE="$2"; shift 2 ;;
+        --root-password) ROOT_PASSWORD="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
@@ -75,7 +86,9 @@ for candidate in \
 done
 if [ -z "$QEMU_BIN" ]; then
     error "qemu-ppc64-static not found. Install it first:
-  Arch:   pacman -S qemu-user-static && yay -S qemu-user-static-binfmt
+  Arch:   sudo pacman -Syu qemu-user-static && yay -S qemu-user-static-binfmt
+          If pacman returns 404s, refresh stale sync databases/mirrors:
+          sudo pacman -Syyu qemu-user-static
   Debian: apt install qemu-user-static binfmt-support"
 fi
 info "QEMU binary: $QEMU_BIN"
@@ -113,6 +126,19 @@ for cmd in wget tar; do
     fi
 done
 
+# ArchPOWER publishes one repository database for architecture-specific
+# packages and one for architecture-independent packages.  Check both before
+# pacman/pacstrap produce misleading mirrorlist or 404 output.
+info "=== Checking ArchPOWER repository metadata ==="
+for repo_db in \
+    "${ARCHPOWER_MIRROR}/base/${ARCH}/base.db" \
+    "${ARCHPOWER_MIRROR}/base/any/base-any.db"; do
+    if ! wget -q --spider "$repo_db"; then
+        error "ArchPOWER repository database is not reachable: $repo_db
+Check your network connection or the ArchPOWER repository status."
+    fi
+done
+
 # ─── Create rootfs directory ──────────────────────────────────────
 if [ -d "$ROOTFS_DIR" ]; then
     info "Removing previous rootfs build..."
@@ -126,6 +152,22 @@ info "=== Bootstrapping Arch Linux ppc64 rootfs ==="
 
 # Create base directory structure
 mkdir -p "$ROOTFS_DIR"/{dev,proc,sys,run,tmp,var/{cache/pacman/pkg,lib/pacman,log},etc/pacman.d,usr/{bin,lib,share}}
+chmod 1777 "$ROOTFS_DIR/tmp"
+chmod 0555 "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys"
+
+cleanup_mounts() {
+    umount -l "$ROOTFS_DIR/proc" 2>/dev/null || true
+    umount -l "$ROOTFS_DIR/sys"  2>/dev/null || true
+    umount -l "$ROOTFS_DIR/dev"  2>/dev/null || true
+    umount -l "$ROOTFS_DIR/run"  2>/dev/null || true
+}
+trap cleanup_mounts EXIT
+
+# Pacman install hooks expect these pseudo-filesystems in the target root.
+mount --bind /proc "$ROOTFS_DIR/proc" 2>/dev/null || true
+mount --bind /sys  "$ROOTFS_DIR/sys"  2>/dev/null || true
+mount --bind /dev  "$ROOTFS_DIR/dev"  2>/dev/null || true
+mount --bind /run  "$ROOTFS_DIR/run"  2>/dev/null || true
 
 # Create pacman configuration targeting ArchPOWER ppc64 repos
 cat > "$ROOTFS_DIR/etc/pacman.conf" << 'PACMAN_CONF'
@@ -135,11 +177,11 @@ Architecture = powerpc64
 SigLevel    = Never
 LocalFileSigLevel = Optional
 
-[core]
+[base]
 Server = https://repo.archlinuxpower.org/base/powerpc64/
 
-[extra]
-Server = https://repo.archlinuxpower.org/base/powerpc64/
+[base-any]
+Server = https://repo.archlinuxpower.org/base/any/
 PACMAN_CONF
 
 # Host-side pacman config for cross-architecture bootstrap
@@ -154,11 +196,11 @@ DBPath      = ${ROOTFS_DIR}/var/lib/pacman/
 CacheDir    = ${ROOTFS_DIR}/var/cache/pacman/pkg/
 LogFile     = ${ROOTFS_DIR}/var/log/pacman.log
 
-[core]
+[base]
 Server = ${ARCHPOWER_MIRROR}/base/powerpc64/
 
-[extra]
-Server = ${ARCHPOWER_MIRROR}/base/powerpc64/
+[base-any]
+Server = ${ARCHPOWER_MIRROR}/base/any/
 HOSTCONF
 
 # On Arch hosts, pacstrap is available from arch-install-scripts.
@@ -167,7 +209,7 @@ BOOTSTRAP_OK=0
 
 if command -v pacstrap &>/dev/null; then
     info "Using pacstrap for bootstrap (from arch-install-scripts)..."
-    if pacstrap -C "$HOST_PACMAN_CONF" -K -M "$ROOTFS_DIR" base 2>&1; then
+    if pacstrap -C "$HOST_PACMAN_CONF" -K -M "$ROOTFS_DIR" "${ROOTFS_PACKAGES[@]}" 2>&1; then
         BOOTSTRAP_OK=1
         info "pacstrap completed successfully"
     else
@@ -187,14 +229,11 @@ if [ "$BOOTSTRAP_OK" -eq 0 ] && command -v pacman &>/dev/null; then
     info "Installing base packages into rootfs..."
     pacman --config "$HOST_PACMAN_CONF" --root "$ROOTFS_DIR" \
         --noconfirm --needed -S \
-        filesystem bash coreutils glibc pacman \
-        systemd systemd-sysvcompat \
-        iproute2 iputils dhcpcd openssh \
-        nano vi less grep sed gawk \
-        procps-ng psmisc which file findutils \
-        tar gzip xz bzip2 \
-        shadow util-linux e2fsprogs kmod \
-        || warn "Some packages may have failed to install"
+        "${ROOTFS_PACKAGES[@]}" || {
+            rm -f "$HOST_PACMAN_CONF"
+            error "Manual pacman bootstrap failed. No rootfs tarball was created.
+Check the package error above, then re-run this script."
+        }
     BOOTSTRAP_OK=1
 fi
 
@@ -257,20 +296,6 @@ cp "$QEMU_BIN" "$ROOTFS_DIR/usr/bin/qemu-ppc64-static"
 # ─── Configure the rootfs via chroot ──────────────────────────────
 info "=== Configuring rootfs ==="
 
-# Mount pseudo-filesystems for chroot
-mount --bind /proc "$ROOTFS_DIR/proc" 2>/dev/null || true
-mount --bind /sys  "$ROOTFS_DIR/sys"  2>/dev/null || true
-mount --bind /dev  "$ROOTFS_DIR/dev"  2>/dev/null || true
-mount --bind /run  "$ROOTFS_DIR/run"  2>/dev/null || true
-
-cleanup_mounts() {
-    umount -l "$ROOTFS_DIR/proc" 2>/dev/null || true
-    umount -l "$ROOTFS_DIR/sys"  2>/dev/null || true
-    umount -l "$ROOTFS_DIR/dev"  2>/dev/null || true
-    umount -l "$ROOTFS_DIR/run"  2>/dev/null || true
-}
-trap cleanup_mounts EXIT
-
 # DNS resolution inside chroot
 cp /etc/resolv.conf "$ROOTFS_DIR/etc/resolv.conf" 2>/dev/null || true
 
@@ -318,8 +343,8 @@ for svc in systemd-networkd systemd-resolved systemd-timesyncd sshd; do
         warn "Could not enable ${svc} (may not be installed yet)"
 done
 
-# Set root password (default: xenon360)
-echo "root:xenon360" | chroot "$ROOTFS_DIR" chpasswd 2>/dev/null || {
+# Set root password (default: arch)
+echo "root:${ROOT_PASSWORD}" | chroot "$ROOTFS_DIR" chpasswd 2>/dev/null || {
     warn "Could not set root password via chpasswd."
     warn "Set it manually after first boot with: passwd"
 }
@@ -367,6 +392,38 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
 GETTY
 
+# Rescue PID 1 for Xenon.  If ArchPOWER's systemd trips an unsupported CPU
+# instruction on the Xbox 360, this init keeps the kernel alive and provides a
+# root shell for diagnostics.
+cat > "$ROOTFS_DIR/sbin/xenon-rescue-init" << 'XENON_RESCUE_INIT'
+#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
+
+mount -o remount,rw / 2>/dev/null || true
+mkdir -p /proc /sys /dev /dev/pts /run /tmp
+chmod 1777 /tmp
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+
+hostname xenon360 2>/dev/null || true
+
+echo
+echo "Xenon rescue init is running."
+echo "The full systemd entry is available as archlinux_systemd in kboot.conf."
+echo "Type 'exec /sbin/init' to test systemd manually, or use this shell to inspect logs."
+echo
+
+while true; do
+    /bin/bash -l
+    echo "Rescue shell exited; restarting to keep PID 1 alive."
+    sleep 1
+done
+XENON_RESCUE_INIT
+chmod 0755 "$ROOTFS_DIR/sbin/xenon-rescue-init"
+
 # ─── Remove QEMU binary from final rootfs ────────────────────────
 rm -f "$ROOTFS_DIR/usr/bin/qemu-ppc64-static"
 
@@ -387,6 +444,6 @@ info "  Tarball: ${OUTPUT_TARBALL}"
 info "  Size: $(du -h "$OUTPUT_TARBALL" | cut -f1)"
 info "=========================================="
 info ""
-info "  Default root password: xenon360"
+info "  Default root password: ${ROOT_PASSWORD}"
 info "  CHANGE THIS after first boot!"
 info ""

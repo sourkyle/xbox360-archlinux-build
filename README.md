@@ -4,13 +4,15 @@ Build scripts for compiling and deploying Arch Linux (ArchPOWER) on Xbox 360 con
 
 > **You need**: An RGH/JTAG-modded Xbox 360 running XeLL Reloaded, a USB HDD (16GB+), and an Arch Linux build machine.
 
+See [`CHANGELOG.md`](CHANGELOG.md) for alpha version history and the rationale behind each build fix.
+
 ---
 
 ## Host Dependencies (Arch Linux)
 
 ```bash
 # Official repos
-sudo pacman -S base-devel bc cpio wget git python texinfo \
+sudo pacman -Syu base-devel bc cpio wget git python texinfo \
                libmpc mpfr gmp rsync \
                qemu-user-static arch-install-scripts \
                dosfstools e2fsprogs parted squashfs-tools \
@@ -24,6 +26,8 @@ sudo systemctl restart systemd-binfmt
 ```
 
 > **Note:** `rsync` is required by the GCC build system. If you see `rsync: command not found` during the toolchain build, install it with `sudo pacman -S rsync`.
+
+> If pacman fails with package download `404` errors, your local sync database or mirror list is stale. Run `sudo pacman -Syyu` to force-refresh package databases, then retry the install. If it still fails, refresh `/etc/pacman.d/mirrorlist` to current HTTPS mirrors and run `sudo pacman -Syyu` again.
 
 > `qemu-user-static-binfmt` is the current AUR package name (replaces older `binfmt-qemu-static`). It registers QEMU as the interpreter for foreign ELF binaries via systemd-binfmt, which is what lets your x86_64 Arch machine execute ppc64 binaries inside a chroot.
 
@@ -48,6 +52,8 @@ Builds `powerpc64-linux-gnu` GCC 12.4 with the Xenon VMX128 patch applied. This 
 ```bash
 ./scripts/01_build_toolchain.sh
 ```
+
+If your checkout path contains spaces, such as `~/Downloads/xbox 360 modding/linux-build`, the script creates a temporary no-space symlink under `/tmp` and builds through that path. GNU binutils/GCC configure scripts reject source/build paths with spaces, so keep any custom `--prefix` path free of spaces too.
 
 Installs to `/usr/local/xenon-linux` by default. To use a different path:
 
@@ -89,9 +95,14 @@ Options:
 
 ```bash
 sudo ./scripts/03_build_archlinux_rootfs.sh --hostname myxbox --timezone America/New_York
+
+# Default root password is "arch"; override it if you want:
+sudo ./scripts/03_build_archlinux_rootfs.sh --root-password my-temporary-password
 ```
 
-> Takes ~10-15 minutes. Produces `output/archlinux-xenon-rootfs.tar.gz`. Default root password is `xenon360`.
+> Takes ~10-15 minutes. Produces `output/archlinux-xenon-rootfs.tar.gz`. Default root password is `arch`.
+
+> Some package post-install hooks may print warnings when bootstrapping a foreign-architecture rootfs from a chroot. The script mounts `/proc`, `/sys`, `/dev`, and `/run` before package installation to avoid the common false positives.
 
 ### Step 4 — Create the bootable USB image
 
@@ -175,7 +186,7 @@ sudo eject /dev/sdX
 
 ### If it doesn't boot
 
-- **"root partition not found"**: The kernel tells you which devices it detected and their UUIDs. Mount the FAT32 partition on your PC, edit `kboot.conf`, and fix the `root=UUID=...` to match. Also update `/etc/fstab` on the ext4 partition.
+- **"root partition not found"**: The kernel tells you which devices it detected and their partition IDs. Mount the FAT32 partition on your PC, edit `kboot.conf`, and fix the `root=PARTUUID=...` to match. Also update `/etc/fstab` on the ext4 partition if filesystem UUIDs changed.
 - **No video output**: Try adding `videomode=0` to `kboot.conf` for 640x480 VGA, or `videomode=10` for HDMI 720p.
 - **Devices not detected**: Power-cycle the console fully — unplug the PSU for 30 seconds. The 360's USB detection is unreliable on cold boot.
 - **XeLL too old**: If XeLL won't boot the kernel, you need to rebuild XeLL with the current toolchain. See the XeLL section below.
@@ -189,8 +200,8 @@ The generated `kboot.conf` on the FAT32 partition:
 speedup=1
 timeout=30
 
-archlinux="usb:/vmlinux root=UUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
-archlinux_safe="usb:/vmlinux root=UUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
+archlinux="usb:/vmlinux root=PARTUUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=6 coherent_pool=16M rootwait video=xenosfb"
+archlinux_safe="usb:/vmlinux root=PARTUUID=... rootfstype=ext4 console=tty0 panic=60 maxcpus=2 coherent_pool=16M rootwait video=xenosfb single"
 ```
 
 Key parameters you can tweak:
@@ -202,6 +213,8 @@ Key parameters you can tweak:
 | `video=xenosfb` | Xenon framebuffer driver |
 | `rootwait` | Wait for USB storage to enumerate before mounting root |
 | `single` | Boot to single-user mode (troubleshooting) |
+
+Current images make `archlinux` and `archlinux_safe` boot through `/sbin/xenon-rescue-init`, a small shell-based PID 1. This avoids kernel panic if ArchPOWER's systemd hits an unsupported Xenon CPU instruction. The generated menu also includes `archlinux_systemd` and `archlinux_systemd_safe` entries for testing the normal systemd path.
 
 ---
 
@@ -307,7 +320,79 @@ sudo pacman -S rsync
 
 Then re-run `./scripts/01_build_toolchain.sh`.
 
+### Toolchain build: `configure: error: path to source ... contains spaces`
+
+Update to the latest scripts and re-run:
+
+```bash
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now builds through a temporary symlink like `/tmp/xenon-linux-build-1000` when the checkout directory has spaces in its path. If you pass `--prefix`, make sure that install path does not contain spaces.
+
+### Toolchain build: glibc `Relocations in generic ELF (EM: 62)`
+
+This means an x86_64 host object was linked by the PowerPC64 target linker. Update to the latest scripts, remove the partial glibc build directory, and re-run Step 1:
+
+```bash
+rm -rf toolchain/build/glibc
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now forces glibc to use the stage-1 cross C compiler and disables C++ detection during the glibc bootstrap, which prevents host `g++` objects such as `support/links-dso-program.o` from entering the target link.
+
+### Toolchain build: stage 2 GCC `cannot find crti.o`
+
+This means stage 2 GCC cannot find glibc's startup files in the sysroot library search paths. Update to the latest scripts, remove the partial stage 2 build directory, and re-run Step 1:
+
+```bash
+rm -rf toolchain/build/gcc-stage2
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now normalizes the post-glibc sysroot library layout before stage 2 starts, including the common PowerPC64 `lib64` startup-file location.
+
+### Toolchain build: libsanitizer `fatal error: crypt.h: No such file or directory`
+
+This happens while GCC is building optional sanitizer runtimes. They are not needed for the Xbox 360 cross-toolchain, and GCC 12's libsanitizer expects `crypt.h`, which modern/minimal target sysroots often do not provide because crypt support lives in a separate libxcrypt package. Update to the latest scripts, remove the partial stage 2 build directory, and re-run Step 1:
+
+```bash
+rm -rf toolchain/build/gcc-stage2
+./scripts/01_build_toolchain.sh
+```
+
+The toolchain script now configures GCC with `--disable-libsanitizer`.
+
+### Kernel build: `/bin/sh: bc: command not found`
+
+```bash
+sudo pacman -S base-devel bc flex bison wget
+```
+
+Then re-run `./scripts/02_build_kernel.sh`. The kernel script checks these host tools before starting the compile so missing dependencies fail early.
+
 ### Rootfs: `binfmt` / `qemu-ppc64-static` errors
+
+If `qemu-ppc64-static` is missing, install QEMU with a synchronized package database:
+
+```bash
+sudo pacman -Syu qemu-user-static
+yay -S qemu-user-static-binfmt
+sudo systemctl restart systemd-binfmt
+```
+
+If pacman reports package download `404` errors such as `qemu-user-static-...pkg.tar.zst failed to download`, force-refresh stale package databases and retry:
+
+```bash
+sudo pacman -Syyu qemu-user-static
+```
+
+If your `/etc/pacman.d/mirrorlist` contains only commented `#Server = ...` lines, enable at least one HTTPS mirror before running host package installs:
+
+```bash
+sudo sed -i '0,/^#Server = https:/s/^#Server = https:/Server = https:/' /etc/pacman.d/mirrorlist
+sudo pacman -Syyu
+```
 
 Make sure the binfmt handlers are active:
 
@@ -318,13 +403,79 @@ ls /proc/sys/fs/binfmt_misc/qemu-ppc64*   # should show an entry
 
 If no entry appears, your `qemu-user-static-binfmt` package may not be installed or configured correctly.
 
+### Rootfs: ArchPOWER repository database errors
+
+The rootfs script uses ArchPOWER's repository layout directly:
+
+```ini
+[base]
+Server = https://repo.archlinuxpower.org/base/powerpc64/
+
+[base-any]
+Server = https://repo.archlinuxpower.org/base/any/
+```
+
+Older script versions used `[core]`/`[extra]`, which made pacman look for nonexistent `core.db` and `extra.db` files. Update to the latest scripts and re-run `sudo ./scripts/03_build_archlinux_rootfs.sh`.
+
+### Rootfs: `target not found: vi`
+
+Older script versions requested a `vi` package that ArchPOWER does not provide under that package name. Update to the latest scripts and re-run Step 3:
+
+```bash
+sudo ./scripts/03_build_archlinux_rootfs.sh
+```
+
+The script now installs `nano` and fails the rootfs build immediately if any required package transaction fails, instead of producing an incomplete tarball.
+
+### USB image: `losetup ... failed to set up loop device: No such file or directory`
+
+Update to the latest scripts and re-run Step 4:
+
+```bash
+sudo ./scripts/04_create_usb_image.sh
+```
+
+The USB image script now creates the output directory, recreates the image file cleanly, verifies the image exists after partitioning, and checks required host tools before calling `losetup`.
+
+If it still cannot find a loop device, load the loop driver and retry:
+
+```bash
+sudo modprobe loop
+sudo ./scripts/04_create_usb_image.sh
+```
+
+If `modprobe loop` fails with a message like `Module loop not found in directory /lib/modules/$(uname -r)`, your running Arch kernel probably does not match the installed module tree after a system update. Reinstall/update the kernel package and reboot:
+
+```bash
+sudo pacman -Syu linux
+sudo reboot
+```
+
+After reboot:
+
+```bash
+sudo modprobe loop
+losetup -f
+sudo ./scripts/04_create_usb_image.sh
+```
+
+If you are using a custom host kernel, make sure it was built with `CONFIG_BLK_DEV_LOOP`.
+
 ### Boot: root partition not found
 
-The 360's USB device enumeration is non-deterministic. The device that was `/dev/sdb3` last boot might be `/dev/sdc3` next time. The kboot.conf uses `root=UUID=...` to avoid this, but if it still fails:
+The 360's USB device enumeration is non-deterministic. The device that was `/dev/sdb3` last boot might be `/dev/sdc3` next time. The kboot.conf uses `root=PARTUUID=...` to avoid this, but if it still fails:
 
-1. Check the kernel output — it prints detected devices and their UUIDs
+1. Check the kernel output — it prints detected devices and partition IDs
 2. Mount the FAT32 partition on your PC and update `kboot.conf`
 3. Also update `/etc/fstab` on the ext4 partition
+
+### Boot: `VFS: unable to mount root fs` / `root= is invalid`
+
+If the panic says `root= is invalid` or shows `root=UUID=...`, rebuild the USB image with the latest scripts. The kernel cannot reliably resolve filesystem `UUID=` directly without an initramfs; the generated `kboot.conf` now uses the root partition `PARTUUID=...`, while `/etc/fstab` still uses filesystem UUIDs inside userspace.
+
+### Boot: `Attempted to kill init! exitcode=0x00000004`
+
+This usually means PID 1 died from `SIGILL` / illegal instruction. On Xenon, ArchPOWER's prebuilt systemd may use an instruction the Xbox 360 CPU does not support. Rebuild the rootfs and USB image with the latest scripts; the default `archlinux` entry now boots a rescue shell via `/sbin/xenon-rescue-init`. Use `archlinux_systemd` only when you want to test systemd directly.
 
 ---
 
