@@ -1,5 +1,3 @@
-# Xbox 360 Arch Linux Build System (Beta)
-
 > **Status:** This tool is only partially working. The XeLL bootloader recognizes the generated boot entry and will start the kernel, but the system is not yet fully booting into a usable Arch Linux environment. I am still working on a resolution. Use this project at your own risk.
 
 This is an all-in-one build system for experimenting with Arch Linux (ArchPOWER) on Xbox 360 consoles via the XeLL bootloader.
