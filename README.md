@@ -2,6 +2,19 @@
 
 THIS TOOL IS ONLY SOMEWHAT WORKING. XELL BOOTLOADER RECOGNIZES THE BOOT ENTRY AND WILL BOOT IT. BUT THAT'S IT. WORKING ON A RESOLUTION TO GET IT RUNNING. USE AT YOUR OWN RISK.
 
+This is an all-in-one compiler for Arch Linux on Xbox 360
+
+**it will:**
+fetch petches required for toolchain > build cross-compiler toolchain > build kernel > build root filesystem > create a USB image
+
+the created image is then be flashed to a USB. I recommend doing this step-by-step, as opposed to using the build_all.sh. Incase you run into any snags with fetching the patches or compiling the toolchain.
+
+This is meant to be built on an Arch Linux system, so I don't know what, or how this setup will look like on any operating system. So don't ask.
+
+I've included issues I ran into when building, as well as some useful tips, should you get stuck at a similar section.
+
+---
+
 Build scripts for compiling and deploying Arch Linux (ArchPOWER) on Xbox 360 consoles via XeLL bootloader.
 
 > **You need**: An RGH/JTAG-modded Xbox 360 running XeLL Reloaded, a USB HDD (16GB+), and an Arch Linux build machine.
