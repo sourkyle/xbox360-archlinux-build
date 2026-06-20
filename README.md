@@ -1,21 +1,20 @@
-# Xbox 360 Arch Linux Build System (BETA)
+> **Status:** This tool is only partially working. The XeLL bootloader recognizes the generated boot entry and will start the kernel, but the system is not yet fully booting into a usable Arch Linux environment. I am still working on a resolution. Use this project at your own risk.
 
-THIS TOOL IS ONLY SOMEWHAT WORKING. XELL BOOTLOADER RECOGNIZES THE BOOT ENTRY AND WILL BOOT IT. BUT THAT'S IT. WORKING ON A RESOLUTION TO GET IT RUNNING. USE AT YOUR OWN RISK.
+This is an all-in-one build system for experimenting with Arch Linux (ArchPOWER) on Xbox 360 consoles via the XeLL bootloader.
 
-This is an all-in-one compiler for Arch Linux on Xbox 360
+It can:
 
-**it will:**
-fetch petches required for toolchain > build cross-compiler toolchain > build kernel > build root filesystem > create a USB image
+1. Fetch the patches required for the toolchain and kernel.
+2. Build the cross-compiler toolchain.
+3. Build the Xbox 360 Linux kernel.
+4. Build the Arch Linux root filesystem.
+5. Create a bootable USB disk image.
 
-the created image is then be flashed to a USB. I recommend doing this step-by-step, as opposed to using the build_all.sh. Incase you run into any snags with fetching the patches or compiling the toolchain.
+The generated image is meant to be flashed directly to a USB drive. I recommend running each step manually instead of using `build_all.sh`, especially while this project is still in beta. Running the steps one at a time makes it easier to diagnose issues with patch fetching, toolchain compilation, kernel building, rootfs creation, or USB image generation.
 
-This is meant to be built on an Arch Linux system, so I don't know what, or how this setup will look like on any operating system. So don't ask.
+This project is intended to be built on an Arch Linux host. I do not know what this setup looks like on other operating systems, and unsupported hosts may require different packages, paths, or workarounds.
 
-I've included issues I ran into when building, as well as some useful tips, should you get stuck at a similar section.
-
----
-
-Build scripts for compiling and deploying Arch Linux (ArchPOWER) on Xbox 360 consoles via XeLL bootloader.
+I have documented the issues I ran into while building, along with troubleshooting notes and useful tips in case you get stuck at a similar stage.
 
 > **You need**: An RGH/JTAG-modded Xbox 360 running XeLL Reloaded, a USB HDD (16GB+), and an Arch Linux build machine.
 
@@ -229,7 +228,7 @@ Key parameters you can tweak:
 | `rootwait` | Wait for USB storage to enumerate before mounting root |
 | `single` | Boot to single-user mode (troubleshooting) |
 
-Current images make `archlinux` and `archlinux_safe` boot through `/sbin/xenon-rescue-init`, a small shell-based PID 1. This avoids kernel panic if ArchPOWER's systemd hits an unsupported Xenon CPU instruction. The generated menu also includes `archlinux_systemd` and `archlinux_systemd_safe` entries for testing the normal systemd path.
+Current images make `archlinux` and `archlinux_safe` boot through `/sbin/xenon-rescue-init`, a tiny native PowerPC64 PID 1 built by the Xenon cross-toolchain. This avoids kernel panic if ArchPOWER's bash or systemd hits an unsupported Xenon CPU instruction. The generated menu also includes `archlinux_systemd` and `archlinux_systemd_safe` entries for testing the normal systemd path.
 
 ---
 
@@ -490,7 +489,20 @@ If the panic says `root= is invalid` or shows `root=UUID=...`, rebuild the USB i
 
 ### Boot: `Attempted to kill init! exitcode=0x00000004`
 
-This usually means PID 1 died from `SIGILL` / illegal instruction. On Xenon, ArchPOWER's prebuilt systemd may use an instruction the Xbox 360 CPU does not support. Rebuild the rootfs and USB image with the latest scripts; the default `archlinux` entry now boots a rescue shell via `/sbin/xenon-rescue-init`. Use `archlinux_systemd` only when you want to test systemd directly.
+This usually means PID 1 died from `SIGILL` / illegal instruction. On Xenon, ArchPOWER's prebuilt bash or systemd may use an instruction the Xbox 360 CPU does not support. Rebuild the rootfs and USB image with the latest scripts; the default `archlinux` entry now boots a native rescue init via `/sbin/xenon-rescue-init`. Use `archlinux_systemd` only when you want to test systemd directly.
+
+The rescue prompt supports:
+
+```text
+help       show available commands
+mounts     remount / and mount proc/sys/dev/run
+ls [dir]   list files
+cat <file> print a file
+sh         try /bin/bash as a child process
+systemd    exec /sbin/init as PID 1
+reboot     reboot
+poweroff   power off
+```
 
 ---
 
