@@ -1,6 +1,22 @@
-# Xbox 360 Arch Linux Build System
+# Xbox 360 Arch Linux Build System (Beta)
 
-Build scripts for compiling and deploying Arch Linux (ArchPOWER) on Xbox 360 consoles via XeLL bootloader.
+> **Status:** This tool is only partially working. The XeLL bootloader recognizes the generated boot entry and will start the kernel, but the system is not yet fully booting into a usable Arch Linux environment. I am still working on a resolution. Use this project at your own risk.
+
+This is an all-in-one build system for experimenting with Arch Linux (ArchPOWER) on Xbox 360 consoles via the XeLL bootloader.
+
+It can:
+
+1. Fetch the patches required for the toolchain and kernel.
+2. Build the cross-compiler toolchain.
+3. Build the Xbox 360 Linux kernel.
+4. Build the Arch Linux root filesystem.
+5. Create a bootable USB disk image.
+
+The generated image is meant to be flashed directly to a USB drive. I recommend running each step manually instead of using `build_all.sh`, especially while this project is still in beta. Running the steps one at a time makes it easier to diagnose issues with patch fetching, toolchain compilation, kernel building, rootfs creation, or USB image generation.
+
+This project is intended to be built on an Arch Linux host. I do not know what this setup looks like on other operating systems, and unsupported hosts may require different packages, paths, or workarounds.
+
+I have documented the issues I ran into while building, along with troubleshooting notes and useful tips in case you get stuck at a similar stage.
 
 > **You need**: An RGH/JTAG-modded Xbox 360 running XeLL Reloaded, a USB HDD (16GB+), and an Arch Linux build machine.
 
