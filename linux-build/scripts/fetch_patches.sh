@@ -18,18 +18,35 @@ mkdir -p "$PATCHES_DIR/gcc" "$PATCHES_DIR/kernel"
 
 # ─── GCC VMX128 patch ─────────────────────────────────────────────
 GCC_PATCH="$PATCHES_DIR/gcc/0004-disable-extra-altivec-instructions.patch"
-if [ ! -f "$GCC_PATCH" ]; then
+download_or_empty() {
+    local url="$1" dest="$2"
+    rm -f "$dest" "${dest}.part"
+    if wget -q -O "${dest}.part" "$url" && [ -s "${dest}.part" ]; then
+        mv "${dest}.part" "$dest"
+        return 0
+    fi
+    rm -f "$dest" "${dest}.part"
+    return 1
+}
+
+if [ ! -s "$GCC_PATCH" ]; then
     info "Downloading GCC Xenon VMX128 patch..."
-    wget -q -O "$GCC_PATCH" \
-        "https://raw.githubusercontent.com/rwf93/buildroot/xbox360/package/gcc/12.3.0/0004-disable-extra-altivec-instructions.patch" || {
+    if download_or_empty \
+        "https://raw.githubusercontent.com/rwf93/buildroot/xbox360/package/gcc/12.3.0/0004-disable-extra-altivec-instructions.patch" \
+        "$GCC_PATCH"; then
+        info "GCC patch saved to: $GCC_PATCH"
+    else
         warn "Failed to download from rwf93/buildroot, trying Free60Project..."
-        wget -q -O "$GCC_PATCH" \
-            "https://raw.githubusercontent.com/Free60Project/buildroot/xbox360_new/package/gcc/12.3.0/0004-disable-extra-altivec-instructions.patch" || {
+        if download_or_empty \
+            "https://raw.githubusercontent.com/Free60Project/buildroot/xbox360_new/package/gcc/12.3.0/0004-disable-extra-altivec-instructions.patch" \
+            "$GCC_PATCH"; then
+            info "GCC patch saved to: $GCC_PATCH"
+        else
+            rm -f "$GCC_PATCH"
             warn "Could not download GCC patch. You may need to obtain it manually."
             warn "Check: https://github.com/Free60Project/buildroot/tree/xbox360_new/package/gcc/"
-        }
-    }
-    [ -f "$GCC_PATCH" ] && info "GCC patch saved to: $GCC_PATCH"
+        fi
+    fi
 else
     info "GCC patch already exists: $GCC_PATCH"
 fi
@@ -52,6 +69,6 @@ fi
 
 info ""
 info "Patches directory contents:"
-find "$PATCHES_DIR" -type f -name "*.patch" | sort
+find "$PATCHES_DIR" -type f \( -name "*.patch" -o -name "*.diff" \) | sort
 info ""
 info "Done! Run 01_build_toolchain.sh next."

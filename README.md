@@ -69,10 +69,11 @@ Builds `powerpc64-linux-gnu` GCC 12.4 with the Xenon VMX128 patch applied. This 
 
 If your checkout path contains spaces, such as `~/Downloads/xbox 360 modding/linux-build`, the script creates a temporary no-space symlink under `/tmp` and builds through that path. GNU binutils/GCC configure scripts reject source/build paths with spaces, so keep any custom `--prefix` path free of spaces too.
 
-Installs to `/usr/local/xenon-linux` by default. To use a different path:
+Installs to `/usr/local/xenon-linux` by default, which usually needs root (`sudo ./scripts/01_build_toolchain.sh`). To use a user-writable path instead:
 
 ```bash
 ./scripts/01_build_toolchain.sh --prefix $HOME/xenon-toolchain
+export TOOLCHAIN_PREFIX=$HOME/xenon-toolchain
 ```
 
 > Takes ~30-90 minutes depending on your CPU. The script is idempotent — if interrupted, re-run it and it resumes where it left off.
@@ -287,29 +288,33 @@ The output `.bin` files go on your console:
 
 ```
 .
-├── Dockerfile                  # Docker build environment (alternative to native)
-├── README.md                   # This file
-├── .gitignore
-├── scripts/
-│   ├── fetch_patches.sh        # Download GCC + kernel patches
-│   ├── 01_build_toolchain.sh   # Cross-compiler (binutils + GCC + glibc)
-│   ├── 02_build_kernel.sh      # Linux kernel for Xenon
-│   ├── 03_build_archlinux_rootfs.sh  # ArchPOWER ppc64 rootfs
-│   ├── 04_create_usb_image.sh  # Bootable USB disk image
-│   └── build_all.sh            # Run all stages
-├── patches/
-│   ├── gcc/                    # GCC VMX128 patch (downloaded by fetch_patches.sh)
-│   └── kernel/free60-patches/  # Free60 kernel patches + defconfigs
-├── kernel/
-│   └── xenon_defconfig         # Kernel config (copy of Free60 official)
-├── toolchain/                  # (created during build)
-├── rootfs/                     # (created during build)
-└── output/                     # Build artifacts
-    ├── vmlinux-xenon           # Kernel image
-    ├── kernel-config           # Kernel .config used
-    ├── modules/                # Kernel modules
-    ├── archlinux-xenon-rootfs.tar.gz
-    └── xbox360-archlinux.img   # ← flash this to USB
+├── README.md
+├── CHANGELOG.md
+├── kboot.conf                  # Example boot menu (the USB image script regenerates this)
+└── linux-build/
+    ├── Dockerfile              # Optional Ubuntu-based build environment
+    ├── scripts/
+    │   ├── fetch_patches.sh
+    │   ├── 01_build_toolchain.sh
+    │   ├── 02_build_kernel.sh
+    │   ├── 03_build_archlinux_rootfs.sh
+    │   ├── 04_create_usb_image.sh
+    │   └── build_all.sh
+    ├── patches/
+    │   ├── gcc/                # GCC VMX128 patch
+    │   └── kernel/free60-patches/
+    ├── kernel/
+    │   └── xenon_defconfig
+    ├── rescue/
+    │   └── xenon-rescue-init.c # Native PID 1 used by the default kboot entries
+    ├── toolchain/              # (created during build)
+    ├── rootfs/                 # (created during build)
+    └── output/                 # Build artifacts
+        ├── vmlinux-xenon
+        ├── kernel-config
+        ├── modules/
+        ├── archlinux-xenon-rootfs.tar.gz
+        └── xbox360-archlinux.img
 ```
 
 ## Troubleshooting
@@ -394,6 +399,8 @@ sudo pacman -Syu qemu-user-static
 yay -S qemu-user-static-binfmt
 sudo systemctl restart systemd-binfmt
 ```
+
+If Step 3 warns that the ArchPOWER databases could not be preflighted, that is often Cloudflare challenging `wget`; continue and let `pacman`/`pacstrap` talk to the mirror. A real repository outage still fails at the package-install step.
 
 If pacman reports package download `404` errors such as `qemu-user-static-...pkg.tar.zst failed to download`, force-refresh stale package databases and retry:
 

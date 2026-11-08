@@ -1,0 +1,8 @@
+# Toolchain, kernel, and image build outputs
+linux-build/toolchain/
+linux-build/rootfs/
+linux-build/output/
+linux-build/kernel/linux-*
+linux-build/kernel/*.tar.xz
+*.img
+*.part

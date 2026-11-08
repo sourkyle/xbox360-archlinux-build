@@ -75,25 +75,41 @@ if [ "$BUILD_METHOD" = "free60" ]; then
     PATCH_FILE="${FREE60_PATCHES}/patch-${KERNEL_VERSION}-xenon0.30.diff"
     DEFCONFIG_FILE="${FREE60_PATCHES}/xenon-${KERNEL_VERSION}.defconfig"
 
-    if [ ! -f "$PATCH_FILE" ]; then
-        error "Free60 patch not found: $PATCH_FILE"
-        error "Run fetch_patches.sh first, or check available versions:"
-        ls "${FREE60_PATCHES}"/patch-*.diff 2>/dev/null || true
+    if [ ! -s "$PATCH_FILE" ]; then
+        error "Free60 patch not found or empty: $PATCH_FILE
+Run ./scripts/fetch_patches.sh first. Available patch files:
+$(ls "${FREE60_PATCHES}"/patch-*.diff 2>/dev/null || echo "  (none)")"
     fi
 
     MAJOR_VER=$(echo "$KERNEL_VERSION" | cut -d. -f1)
     KERNEL_URL="https://cdn.kernel.org/pub/linux/kernel/v${MAJOR_VER}.x/linux-${KERNEL_VERSION}.tar.xz"
     KERNEL_TARBALL="${BUILD_ROOT}/kernel/linux-${KERNEL_VERSION}.tar.xz"
 
-    if [ ! -d "$KERNEL_SRC" ]; then
-        if [ ! -f "$KERNEL_TARBALL" ]; then
+    if [ -d "$KERNEL_SRC" ]; then
+        if [ -f "$KERNEL_SRC/.xenon_kernel_version" ]; then
+            existing_ver="$(cat "$KERNEL_SRC/.xenon_kernel_version")"
+            if [ "$existing_ver" != "$KERNEL_VERSION" ]; then
+                error "Kernel source at $KERNEL_SRC is version $existing_ver, but $KERNEL_VERSION was requested.
+Remove it and re-run:  rm -rf \"$KERNEL_SRC\""
+            fi
+        fi
+    else
+        if [ ! -s "$KERNEL_TARBALL" ]; then
             info "Downloading Linux ${KERNEL_VERSION}..."
             mkdir -p "$(dirname "$KERNEL_TARBALL")"
-            wget -q --show-progress -O "$KERNEL_TARBALL" "$KERNEL_URL"
+            rm -f "$KERNEL_TARBALL" "${KERNEL_TARBALL}.part"
+            wget -q --show-progress -O "${KERNEL_TARBALL}.part" "$KERNEL_URL"
+            if [ ! -s "${KERNEL_TARBALL}.part" ]; then
+                rm -f "${KERNEL_TARBALL}.part"
+                error "Failed to download kernel tarball: $KERNEL_URL"
+            fi
+            mv "${KERNEL_TARBALL}.part" "$KERNEL_TARBALL"
         fi
         info "Extracting kernel source..."
+        mkdir -p "${BUILD_ROOT}/kernel"
         tar xf "$KERNEL_TARBALL" -C "${BUILD_ROOT}/kernel/"
         mv "${BUILD_ROOT}/kernel/linux-${KERNEL_VERSION}" "$KERNEL_SRC"
+        echo "$KERNEL_VERSION" > "$KERNEL_SRC/.xenon_kernel_version"
     fi
 
     cd "$KERNEL_SRC"
@@ -147,11 +163,32 @@ else
     make ARCH=powerpc CROSS_COMPILE="$CROSS_COMPILE" ppc64_defconfig
 fi
 
-# Ensure ZRAM is built-in (not module) for immediate swap availability
-scripts/config --file .config \
-    --enable CONFIG_ZRAM \
-    --enable CONFIG_ZSWAP \
-    --enable CONFIG_ZSWAP_DEFAULT_ON 2>/dev/null || true
+# Force options the Xbox 360 boot path actually needs.  Free60's 6.18
+# defconfig leaves ZRAM as a module and omits framebuffer console / generic
+# HID keyboard support, which makes tty0 silent and USB keyboards inert.
+if [ -x scripts/config ] || [ -f scripts/config ]; then
+    scripts/config --file .config \
+        --enable CONFIG_ZRAM \
+        --enable CONFIG_ZSWAP \
+        --enable CONFIG_ZSWAP_DEFAULT_ON \
+        --enable CONFIG_VT \
+        --enable CONFIG_VT_CONSOLE \
+        --enable CONFIG_FRAMEBUFFER_CONSOLE \
+        --enable CONFIG_FONTS \
+        --enable CONFIG_FONT_8x16 \
+        --enable CONFIG_DRM_FBDEV_EMULATION \
+        --enable CONFIG_INPUT_KEYBOARD \
+        --enable CONFIG_HID_GENERIC \
+        --enable CONFIG_USB_HID \
+        --enable CONFIG_MSDOS_PARTITION \
+        --enable CONFIG_FHANDLE \
+        --enable CONFIG_PROC_FS \
+        --enable CONFIG_SYSFS \
+        --enable CONFIG_UNIX98_PTYS || \
+        warn "scripts/config could not apply one or more boot options"
+else
+    warn "scripts/config not found; kernel .config was not adjusted"
+fi
 
 make ARCH=powerpc CROSS_COMPILE="$CROSS_COMPILE" olddefconfig
 

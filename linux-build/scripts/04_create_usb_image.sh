@@ -124,8 +124,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait for partition devices
-sleep 1
+# Wait for partition devices (udev can lag behind losetup --partscan)
+i=0
+while [ "$i" -lt 15 ]; do
+    if [ -b "${LOOP_DEV}p1" ] && [ -b "${LOOP_DEV}p2" ] && [ -b "${LOOP_DEV}p3" ]; then
+        break
+    fi
+    partprobe "$LOOP_DEV" 2>/dev/null || true
+    sleep 1
+    i=$((i + 1))
+done
+if [ ! -b "${LOOP_DEV}p1" ] || [ ! -b "${LOOP_DEV}p3" ]; then
+    error "Loop partitions did not appear on ${LOOP_DEV} (expected ${LOOP_DEV}p1 and ${LOOP_DEV}p3).
+Try: sudo losetup -d ${LOOP_DEV}; sudo modprobe loop"
+fi
 
 # ─── Format partitions ───────────────────────────────────────────
 info "=== Formatting partitions ==="

@@ -1,5 +1,10 @@
 # Changelog
 
+## Alpha 1.14 - Fresh-build script correctness
+
+- Change: Made the build scripts executable, stopped treating interrupted `wget` files as complete downloads, refused to `rm -rf` a still-mounted rootfs, waited for loop partitions before formatting, and failed early when `/usr/local/xenon-linux` is not writable. Step 2 now enables framebuffer console / generic HID keyboard support and built-in ZRAM. Step 3 autologin is applied to `getty@tty1` (the unit systemd actually starts) instead of unused `getty@tty0`. ArchPOWER `wget --spider` 403s no longer abort the rootfs stage.
+- Why: A clean checkout could not run `./scripts/*.sh` because the files were mode 644. A failed download left an empty tarball/patch that later runs skipped. Recursively deleting a bind-mounted rootfs can walk into host `/proc`. Free60's 6.18 defconfig omitted `CONFIG_FRAMEBUFFER_CONSOLE` and disabled `CONFIG_INPUT_KEYBOARD`, so a freshly built kernel had no VC and no USB keyboard. Cloudflare in front of ArchPOWER made the old hard `wget --spider` check fail even when pacman could still fetch packages.
+
 ## Alpha 1.13 - Native Xenon rescue init
 
 - Commit: `3482210`
