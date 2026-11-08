@@ -136,18 +136,38 @@ done
 # packages and one for architecture-independent packages.  Check both before
 # pacman/pacstrap produce misleading mirrorlist or 404 output.
 info "=== Checking ArchPOWER repository metadata ==="
+# repo.archlinuxpower.org sits behind Cloudflare. wget --spider often
+# gets a 403 challenge even when pacman on an Arch host can still fetch
+# the databases, so treat a failed preflight as a warning, not a hard stop.
 for repo_db in \
     "${ARCHPOWER_MIRROR}/base/${ARCH}/base.db" \
     "${ARCHPOWER_MIRROR}/base/any/base-any.db"; do
-    if ! wget -q --spider "$repo_db"; then
-        error "ArchPOWER repository database is not reachable: $repo_db
-Check your network connection or the ArchPOWER repository status."
+    if wget -q --spider --user-agent="pacman/7.0.0 (Linux x86_64) libalpm/15.0.0" "$repo_db"; then
+        info "Reachable: $repo_db"
+    else
+        warn "Could not preflight $repo_db (Cloudflare or network)."
+        warn "Continuing; pacman/pacstrap will fail if the repository is actually down."
     fi
 done
+
+# Unmount leftover binds from a previous interrupted run BEFORE rm -rf.
+# Recursively deleting a rootfs that still has /proc,/sys,/dev bind-mounted
+# can walk into the host filesystems.
+cleanup_mounts() {
+    umount -l "$ROOTFS_DIR/proc" 2>/dev/null || true
+    umount -l "$ROOTFS_DIR/sys"  2>/dev/null || true
+    umount -l "$ROOTFS_DIR/dev"  2>/dev/null || true
+    umount -l "$ROOTFS_DIR/run"  2>/dev/null || true
+}
 
 # ─── Create rootfs directory ──────────────────────────────────────
 if [ -d "$ROOTFS_DIR" ]; then
     info "Removing previous rootfs build..."
+    cleanup_mounts
+    if grep -F " ${ROOTFS_DIR}" /proc/mounts >/dev/null 2>&1; then
+        error "Refusing to delete ${ROOTFS_DIR} because something is still mounted under it.
+Unmount leftover binds, then re-run this script."
+    fi
     rm -rf "$ROOTFS_DIR"
 fi
 info "=== Creating rootfs at ${ROOTFS_DIR} ==="
@@ -161,12 +181,6 @@ mkdir -p "$ROOTFS_DIR"/{dev,proc,sys,run,tmp,var/{cache/pacman/pkg,lib/pacman,lo
 chmod 1777 "$ROOTFS_DIR/tmp"
 chmod 0555 "$ROOTFS_DIR/proc" "$ROOTFS_DIR/sys"
 
-cleanup_mounts() {
-    umount -l "$ROOTFS_DIR/proc" 2>/dev/null || true
-    umount -l "$ROOTFS_DIR/sys"  2>/dev/null || true
-    umount -l "$ROOTFS_DIR/dev"  2>/dev/null || true
-    umount -l "$ROOTFS_DIR/run"  2>/dev/null || true
-}
 trap cleanup_mounts EXIT
 
 # Pacman install hooks expect these pseudo-filesystems in the target root.
@@ -390,9 +404,10 @@ WantedBy=multi-user.target
 ZRAM_SERVICE
 chroot "$ROOTFS_DIR" systemctl enable zram-swap 2>/dev/null || true
 
-# Auto-login on tty0 (framebuffer console)
-mkdir -p "$ROOTFS_DIR/etc/systemd/system/getty@tty0.service.d"
-cat > "$ROOTFS_DIR/etc/systemd/system/getty@tty0.service.d/override.conf" << 'GETTY'
+# Auto-login on tty1 (first virtual console / framebuffer).  getty@tty0 is
+# never enabled by systemd, so an override there would never run.
+mkdir -p "$ROOTFS_DIR/etc/systemd/system/getty@tty1.service.d"
+cat > "$ROOTFS_DIR/etc/systemd/system/getty@tty1.service.d/override.conf" << 'GETTY'
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
@@ -404,6 +419,7 @@ if [ ! -f "$RESCUE_INIT_SRC" ]; then
     error "Rescue init source not found: $RESCUE_INIT_SRC"
 fi
 info "Building Xenon native rescue init..."
+mkdir -p "$ROOTFS_DIR/sbin"
 if ! "$CROSS_CC" -static -Os -s -fno-stack-protector -mno-altivec -mno-vsx \
     "$RESCUE_INIT_SRC" -o "$ROOTFS_DIR/sbin/xenon-rescue-init"; then
     warn "Retrying rescue init build without -mno-vsx"
@@ -420,6 +436,9 @@ rm -f "$ROOTFS_DIR/usr/bin/qemu-ppc64-static"
 # ─── Cleanup mounts ──────────────────────────────────────────────
 cleanup_mounts
 trap - EXIT
+if grep -F " ${ROOTFS_DIR}" /proc/mounts >/dev/null 2>&1; then
+    error "Cannot package rootfs; filesystems are still mounted under ${ROOTFS_DIR}"
+fi
 
 # ─── Package rootfs as tarball ────────────────────────────────────
 info "=== Packaging rootfs ==="

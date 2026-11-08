@@ -64,6 +64,14 @@ if [[ "$PREFIX" =~ [[:space:]] ]]; then
     error "Install prefix cannot contain spaces: $PREFIX"
 fi
 
+# ─── Verify host prerequisites ────────────────────────────────────
+for cmd in rsync make gcc g++ wget tar bison flex makeinfo nproc; do
+    if ! command -v "$cmd" &>/dev/null; then
+        error "Required command not found: $cmd
+  On Arch Linux: sudo pacman -S rsync base-devel texinfo wget"
+    fi
+done
+
 SYSROOT="${PREFIX}/${TARGET}/sysroot"
 CROSS_CC="${TARGET}-gcc"
 CROSS_AR="${TARGET}-ar"
@@ -100,23 +108,30 @@ export PATH="${PREFIX}/bin:${PATH}"
 
 download() {
     local url="$1" dest="$2"
-    if [ -f "$dest" ]; then
+    if [ -f "$dest" ] && [ -s "$dest" ]; then
         info "Already downloaded: $(basename "$dest")"
         return 0
     fi
+    rm -f "$dest" "${dest}.part"
     info "Downloading $(basename "$dest")..."
-    wget -q --show-progress -O "$dest" "$url"
+    wget -q --show-progress -O "${dest}.part" "$url"
+    if [ ! -s "${dest}.part" ]; then
+        rm -f "${dest}.part"
+        error "Download failed or was empty: $url"
+    fi
+    mv "${dest}.part" "$dest"
 }
 
-# ─── Verify host prerequisites ────────────────────────────────────
-for cmd in rsync make gcc g++ wget tar bison flex makeinfo; do
-    if ! command -v "$cmd" &>/dev/null; then
-        error "Required command not found: $cmd
-  On Arch Linux: sudo pacman -S rsync base-devel texinfo wget"
-    fi
-done
+if ! mkdir -p "$PREFIX" "$SYSROOT" 2>/dev/null || [ ! -w "$PREFIX" ]; then
+    error "Cannot write to install prefix: $PREFIX
+The default prefix /usr/local/xenon-linux usually requires root.
+Re-run with sudo, or install to a user-writable path:
+  $0 --prefix \"\$HOME/xenon-toolchain\"
+If you use a custom prefix, export it for later steps:
+  export TOOLCHAIN_PREFIX=\"\$HOME/xenon-toolchain\""
+fi
 
-mkdir -p "$SRC_DIR" "$BUILD_DIR" "$PREFIX" "$SYSROOT"
+mkdir -p "$SRC_DIR" "$BUILD_DIR"
 
 # ─── Download sources ──────────────────────────────────────────────
 info "=== Downloading toolchain sources ==="
@@ -145,20 +160,24 @@ extract_if_needed "$SRC_DIR/linux-${LINUX_VERSION}.tar.xz"       "$SRC_DIR/linux
 GCC_SRC="$SRC_DIR/gcc-${GCC_VERSION}"
 PATCH_FILE="${BUILD_ROOT}/patches/gcc/0004-disable-extra-altivec-instructions.patch"
 
-if [ -f "$PATCH_FILE" ]; then
-    if [ ! -f "$GCC_SRC/.xenon_patched" ]; then
-        info "Applying Xenon VMX128 GCC patch..."
-        cd "$GCC_SRC"
-        patch -p1 < "$PATCH_FILE" || warn "Patch may have already been applied"
+if [ ! -s "$PATCH_FILE" ]; then
+    warn "Xenon GCC patch not found or empty: $PATCH_FILE"
+    warn "The toolchain will build but binaries may use unsupported AltiVec instructions."
+    warn "Run ./scripts/fetch_patches.sh, then delete $GCC_SRC and re-run this script."
+elif [ ! -f "$GCC_SRC/.xenon_patched" ]; then
+    info "Applying Xenon VMX128 GCC patch..."
+    cd "$GCC_SRC"
+    if patch -p1 --forward --dry-run < "$PATCH_FILE" >/dev/null 2>&1; then
+        patch -p1 --forward < "$PATCH_FILE"
+        touch "$GCC_SRC/.xenon_patched"
+    elif grep -q 'TARGET_ALTIVEC && 0' gcc/config/rs6000/altivec.md; then
+        info "Xenon GCC patch appears already applied"
         touch "$GCC_SRC/.xenon_patched"
     else
-        info "Xenon GCC patch already applied"
+        error "Failed to apply Xenon VMX128 GCC patch: $PATCH_FILE"
     fi
 else
-    warn "Xenon GCC patch not found at $PATCH_FILE"
-    warn "The toolchain will build but binaries may use unsupported AltiVec instructions."
-    warn "Download the patch from:"
-    warn "  https://raw.githubusercontent.com/rwf93/buildroot/xbox360/package/gcc/12.3.0/0004-disable-extra-altivec-instructions.patch"
+    info "Xenon GCC patch already applied"
 fi
 
 # ─── Fix libcody for newer host compilers (GCC 14+) ──────────────

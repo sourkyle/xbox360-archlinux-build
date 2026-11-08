@@ -41,6 +41,16 @@ done
 info()  { echo -e "\033[1;34m[BUILD]\033[0m $*"; }
 sep()   { echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"; }
 
+export TOOLCHAIN_PREFIX="${TOOLCHAIN_PREFIX:-/usr/local/xenon-linux}"
+export PATH="${TOOLCHAIN_PREFIX}/bin:${PATH}"
+
+if { [ "$SKIP_ROOTFS" -eq 0 ] || [ "$SKIP_USB" -eq 0 ]; } && [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: rootfs and USB image stages must run as root." >&2
+    echo "  sudo $0 [options]" >&2
+    echo "Or skip them: $0 --skip-rootfs --skip-usb" >&2
+    exit 1
+fi
+
 sep
 info "Xbox 360 Arch Linux Build System"
 info "$(date)"
@@ -51,13 +61,10 @@ if [ "$SKIP_TOOLCHAIN" -eq 0 ]; then
     sep
     info "STAGE 1/4: Building cross-compiler toolchain"
     sep
-    bash "$SCRIPT_DIR/01_build_toolchain.sh"
+    bash "$SCRIPT_DIR/01_build_toolchain.sh" --prefix "$TOOLCHAIN_PREFIX"
 else
     info "Skipping toolchain build"
 fi
-
-export TOOLCHAIN_PREFIX="/usr/local/xenon-linux"
-export PATH="${TOOLCHAIN_PREFIX}/bin:${PATH}"
 
 # Stage 2: Kernel
 if [ "$SKIP_KERNEL" -eq 0 ]; then
